@@ -14,9 +14,26 @@ const NewsArticleWidget = () => {
 
   useEffect(() => {
     fetch('/api/discover?mode=preview')
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.message || 'Could not load news.');
+        }
+
+        return data;
+      })
       .then((data) => {
-        const articles = (data.blogs || []).filter((a: Article) => a.thumbnail);
+        const articles = Array.isArray(data.blogs)
+          ? data.blogs.filter((entry: Article) => entry.thumbnail)
+          : [];
+
+        if (articles.length === 0) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+
         setArticle(articles[Math.floor(Math.random() * articles.length)]);
         setLoading(false);
       })

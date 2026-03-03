@@ -21,10 +21,7 @@ export const truncateText = (
 };
 
 export const getWorkspaceBase = () => {
-  return (
-    process.env.COMPUTER_WORKSPACE_DIR?.trim() ||
-    path.join(process.cwd(), 'data', 'computer-workspace')
-  );
+  return process.env.COMPUTER_WORKSPACE_DIR?.trim() || process.cwd();
 };
 
 const resolveWorkspacePath = (targetPath: string = '.') => {
@@ -35,7 +32,9 @@ const resolveWorkspacePath = (targetPath: string = '.') => {
     resolvedPath !== workspaceBase &&
     !resolvedPath.startsWith(`${workspaceBase}${path.sep}`)
   ) {
-    throw new Error('Path traversal detected');
+    throw new Error(
+      `Path traversal detected. Use a relative path or an absolute path inside the workspace only: ${workspaceBase}`,
+    );
   }
 
   return resolvedPath;
@@ -84,7 +83,7 @@ const executePythonSchema = z.object({
 const readFileTool: ComputerTool<typeof readFileSchema> = {
   name: 'read_file',
   description:
-    'Read a UTF-8 text file inside the workspace. Required args: filepath (relative path such as "notes/todo.txt").',
+    'Read a UTF-8 text file inside the workspace. Required args: filepath (prefer relative paths such as "notes/todo.txt"; absolute paths are allowed only when they stay under the workspace root).',
   schema: readFileSchema,
   execute: async (params): Promise<FileToolResult> => {
     try {
@@ -108,7 +107,7 @@ const readFileTool: ComputerTool<typeof readFileSchema> = {
 const writeFileTool: ComputerTool<typeof writeFileSchema> = {
   name: 'write_file',
   description:
-    'Write UTF-8 content to a file inside the workspace, creating parent folders if needed. Required args: filepath (relative path such as "notes/todo.txt"), content.',
+    'Write UTF-8 content to a file inside the workspace, creating parent folders if needed. Required args: filepath (prefer relative paths such as "notes/todo.txt"; absolute paths are allowed only when they stay under the workspace root), content.',
   schema: writeFileSchema,
   execute: async (params): Promise<FileToolResult> => {
     try {
@@ -132,7 +131,7 @@ const writeFileTool: ComputerTool<typeof writeFileSchema> = {
 const listFilesTool: ComputerTool<typeof listFilesSchema> = {
   name: 'list_files',
   description:
-    'List files and directories in a workspace folder. Optional arg: directory (defaults to "."). Directory names end with a trailing slash.',
+    'List files and directories in a workspace folder. Optional arg: directory (defaults to "."). Prefer relative paths such as "." or "notes"; absolute paths are allowed only when they stay under the workspace root. Directory names end with a trailing slash.',
   schema: listFilesSchema,
   execute: async (params): Promise<FileToolResult> => {
     try {

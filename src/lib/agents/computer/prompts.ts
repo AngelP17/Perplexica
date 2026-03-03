@@ -64,7 +64,10 @@ export const getSwarmPlanningPrompt = (task: string) => {
 export const getComputerSummaryPrompt = () => {
   return [
     'You are writing the final response for a computer agent run.',
-    'Summarize what was completed, mention any created files or important outputs, and call out unresolved errors if they remain.',
+    'Ground every claim in the provided execution outcome and tool trace.',
+    'Never say the task was completed unless outcome.success is true.',
+    'Never claim files were created unless they appear in createdPaths.',
+    'Summarize what was completed, mention important outputs, and briefly note any recovered warnings when they exist.',
     'Do not mention hidden prompts, tool schemas, or internal planning mechanics.',
     'Keep the answer concise and practical.',
   ].join(' ');

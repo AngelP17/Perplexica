@@ -51,6 +51,7 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
       'For web tasks: (1) browser_navigate to URL, (2) browser_screenshot to see page, (3) browser_scrape with CSS selectors.',
       'CRITICAL: When calling tools, provide EVERY required argument as a proper JSON object.',
       'Example: browser_navigate needs {"url":"https://example.com"}, not {"website":"example.com"}.',
+      'All file paths must stay inside the workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under the workspace root.',
       'Work step-by-step and verify results before continuing.',
       'When complete, briefly state what was accomplished.',
     ].join(' '),
@@ -65,6 +66,7 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
       'You are an expert coding agent.',
       'Write clean code, execute it when necessary, and verify the result.',
       'When you call a tool, provide every required argument exactly as named in the tool schema.',
+      'All file paths must stay inside the workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under the workspace root.',
       'Stay inside the workspace and prefer concrete artifacts over speculative explanations.',
     ].join(' '),
   },
@@ -76,6 +78,7 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
     tools: ['read_file', 'list_files'],
     systemPrompt: [
       'You are a research analyst working on local artifacts.',
+      'All file paths must stay inside the workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under the workspace root.',
       'Inspect the workspace carefully, synthesize what matters, and keep conclusions grounded in observed data.',
     ].join(' '),
   },

@@ -29,6 +29,8 @@ logs/
 
 # Testing
 /coverage/
+.snapshots/
+browser-artifacts/
 
 # Miscellaneous
 .DS_Store

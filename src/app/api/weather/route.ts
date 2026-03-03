@@ -1,29 +1,101 @@
+type WeatherRequestBody = {
+  lat?: number;
+  lng?: number;
+  city?: string;
+  measureUnit?: 'Imperial' | 'Metric';
+};
+
+type ApproxLocation = {
+  latitude: number;
+  longitude: number;
+  city: string;
+};
+
+const isValidCoordinate = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const getApproxLocation = async (): Promise<ApproxLocation | null> => {
+  const endpoints = ['https://ipwho.is/', 'https://ipwhois.app/json/'];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        headers: {
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!res.ok) {
+        continue;
+      }
+
+      const data = await res.json();
+      const latitude = Number(data.latitude);
+      const longitude = Number(data.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        continue;
+      }
+
+      return {
+        latitude,
+        longitude,
+        city: data.city || data.region || data.country || 'Current location',
+      };
+    } catch {
+      console.warn(`Approximate weather location lookup failed for ${endpoint}`);
+    }
+  }
+
+  return null;
+};
+
 export const POST = async (req: Request) => {
   try {
-    const body: {
-      lat: number;
-      lng: number;
-      measureUnit: 'Imperial' | 'Metric';
-    } = await req.json();
+    const body = (await req.json()) as WeatherRequestBody;
+    const measureUnit =
+      body.measureUnit === 'Imperial' ? 'Imperial' : 'Metric';
 
-    if (!body.lat || !body.lng) {
+    const location =
+      isValidCoordinate(body.lat) && isValidCoordinate(body.lng)
+        ? {
+            latitude: body.lat,
+            longitude: body.lng,
+            city: body.city?.trim() || 'Current location',
+          }
+        : await getApproxLocation();
+
+    if (!location) {
       return Response.json(
         {
-          message: 'Invalid request.',
+          message: 'Could not determine a weather location.',
         },
-        { status: 400 },
+        { status: 503 },
       );
     }
 
     const res = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${body.lat}&longitude=${body.lng}&current=weather_code,temperature_2m,is_day,relative_humidity_2m,wind_speed_10m&timezone=auto${
-        body.measureUnit === 'Metric' ? '' : '&temperature_unit=fahrenheit'
-      }${body.measureUnit === 'Metric' ? '' : '&wind_speed_unit=mph'}`,
+      `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&current=weather_code,temperature_2m,is_day,relative_humidity_2m,wind_speed_10m&timezone=auto${
+        measureUnit === 'Metric' ? '' : '&temperature_unit=fahrenheit'
+      }${measureUnit === 'Metric' ? '' : '&wind_speed_unit=mph'}`,
+      {
+        signal: AbortSignal.timeout(10000),
+      },
     );
+
+    if (!res.ok) {
+      return Response.json(
+        {
+          message: 'Weather provider request failed.',
+        },
+        { status: 502 },
+      );
+    }
 
     const data = await res.json();
 
-    if (data.error) {
+    if (data.error || !data.current) {
       console.error(`Error fetching weather data: ${data.reason}`);
       return Response.json(
         {
@@ -37,6 +109,7 @@ export const POST = async (req: Request) => {
       temperature: number;
       condition: string;
       humidity: number;
+      location: string;
       windSpeed: number;
       icon: string;
       temperatureUnit: 'C' | 'F';
@@ -45,10 +118,11 @@ export const POST = async (req: Request) => {
       temperature: data.current.temperature_2m,
       condition: '',
       humidity: data.current.relative_humidity_2m,
+      location: location.city,
       windSpeed: data.current.wind_speed_10m,
       icon: '',
-      temperatureUnit: body.measureUnit === 'Metric' ? 'C' : 'F',
-      windSpeedUnit: body.measureUnit === 'Metric' ? 'm/s' : 'mph',
+      temperatureUnit: measureUnit === 'Metric' ? 'C' : 'F',
+      windSpeedUnit: measureUnit === 'Metric' ? 'm/s' : 'mph',
     };
 
     const code = data.current.weather_code;

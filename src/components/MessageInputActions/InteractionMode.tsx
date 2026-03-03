@@ -36,15 +36,18 @@ const InteractionMode = ({ compact = false }: { compact?: boolean }) => {
             type="button"
             className={cn(
               'flex items-center gap-1 rounded-xl text-black/50 dark:text-white/50 transition duration-200 hover:bg-light-secondary dark:hover:bg-dark-secondary hover:text-black dark:hover:text-white focus:outline-none',
-              compact ? 'p-2' : 'px-2.5 py-2',
+              compact ? 'px-2.5 py-2' : 'px-2.5 py-2',
             )}
           >
             {selectedMode.icon}
-            {!compact && (
-              <span className="text-xs font-medium text-black/70 dark:text-white/70">
-                {selectedMode.title}
-              </span>
-            )}
+            <span
+              className={cn(
+                'text-xs font-medium text-black/70 dark:text-white/70',
+                compact && 'hidden md:inline',
+              )}
+            >
+              {selectedMode.title}
+            </span>
             <ChevronDown
               size={16}
               className={cn('transition duration-200', open && 'rotate-180')}

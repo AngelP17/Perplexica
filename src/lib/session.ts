@@ -15,6 +15,9 @@ class SessionManager {
   private events: { event: string; data: any }[] = [];
   private emitter = new EventEmitter();
   private TTL_MS = 30 * 60 * 1000;
+  private createdAt = Date.now();
+  private lastActivityAt = Date.now();
+  private terminalState = false;
 
   constructor(id?: string) {
     this.id = id ?? crypto.randomUUID();
@@ -42,6 +45,11 @@ class SessionManager {
     this.emitter.removeAllListeners();
   }
 
+  destroy() {
+    this.removeAllListeners();
+    SessionManager.sessions.delete(this.id);
+  }
+
   private cloneEventData<T>(data: T): T {
     if (typeof structuredClone === 'function') {
       return structuredClone(data);
@@ -51,6 +59,10 @@ class SessionManager {
   }
 
   emit(event: string, data: any) {
+    this.lastActivityAt = Date.now();
+    if (event === 'end' || event === 'error') {
+      this.terminalState = true;
+    }
     this.emitter.emit(event, data);
     this.events.push({ event, data: this.cloneEventData(data) });
   }
@@ -83,6 +95,22 @@ class SessionManager {
 
   getAllBlocks() {
     return Array.from(this.blocks.values());
+  }
+
+  isTerminal() {
+    return this.terminalState;
+  }
+
+  getCreatedAt() {
+    return this.createdAt;
+  }
+
+  getLastActivityAt() {
+    return this.lastActivityAt;
+  }
+
+  isStale(maxIdleMs = 2 * 60 * 1000) {
+    return !this.terminalState && Date.now() - this.lastActivityAt > maxIdleMs;
   }
 
   subscribe(listener: (event: string, data: any) => void): () => void {

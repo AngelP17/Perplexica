@@ -46,20 +46,19 @@ const MessageInput = () => {
     };
   }, []);
 
+  const submitMessage = () => {
+    if (loading || message.trim().length === 0) {
+      return;
+    }
+
+    sendMessage(message);
+    setMessage('');
+  };
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (loading) return;
-        sendMessage(message);
-        setMessage('');
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !loading) {
-          e.preventDefault();
-          sendMessage(message);
-          setMessage('');
-        }
       }}
       className={cn(
         'relative bg-light-secondary dark:bg-dark-secondary p-4 flex items-center overflow-visible border border-light-200 dark:border-dark-200 shadow-sm shadow-light-200/10 dark:shadow-black/20 transition-all duration-200 focus-within:border-light-300 dark:focus-within:border-dark-300',
@@ -77,6 +76,12 @@ const MessageInput = () => {
         ref={inputRef}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submitMessage();
+          }
+        }}
         onHeightChange={(height, props) => {
           setTextareaRows(Math.ceil(height / props.rowHeight));
         }}
@@ -89,6 +94,8 @@ const MessageInput = () => {
       />
       {mode === 'single' && (
         <button
+          type="button"
+          onClick={submitMessage}
           disabled={message.trim().length === 0 || loading}
           className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
         >
@@ -103,6 +110,8 @@ const MessageInput = () => {
             {interactionMode === 'search' && <AttachSmall />}
           </div>
           <button
+            type="button"
+            onClick={submitMessage}
             disabled={message.trim().length === 0 || loading}
             className="bg-[#24A0ED] text-white disabled:text-black/50 dark:disabled:text-white/50 hover:bg-opacity-85 transition duration-100 disabled:bg-[#e0e0dc79] dark:disabled:bg-[#ececec21] rounded-full p-2"
           >

@@ -41,20 +41,19 @@ const EmptyChatMessageInput = () => {
     };
   }, []);
 
+  const submitMessage = () => {
+    if (loading || message.trim().length === 0) {
+      return;
+    }
+
+    sendMessage(message);
+    setMessage('');
+  };
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (loading) return;
-        sendMessage(message);
-        setMessage('');
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !loading) {
-          e.preventDefault();
-          sendMessage(message);
-          setMessage('');
-        }
       }}
       className="w-full"
     >
@@ -63,6 +62,12 @@ const EmptyChatMessageInput = () => {
           ref={inputRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submitMessage();
+            }
+          }}
           minRows={2}
           className="px-2 bg-transparent placeholder:text-[15px] placeholder:text-black/50 dark:placeholder:text-white/50 text-sm text-black dark:text-white resize-none focus:outline-none w-full max-h-24 lg:max-h-36 xl:max-h-48"
           placeholder={
@@ -84,6 +89,8 @@ const EmptyChatMessageInput = () => {
               {interactionMode === 'search' && <Attach />}
             </div>
             <button
+              type="button"
+              onClick={submitMessage}
               disabled={message.trim().length === 0 || loading}
               className="bg-sky-500 text-white disabled:text-black/50 dark:disabled:text-white/50 disabled:bg-[#e0e0dc] dark:disabled:bg-[#ececec21] hover:bg-opacity-85 transition duration-100 rounded-full p-2"
             >

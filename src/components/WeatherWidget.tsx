@@ -1,4 +1,4 @@
-import { Cloud, Sun, CloudRain, CloudSnow, Wind } from 'lucide-react';
+import { Cloud, Wind } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 const WeatherWidget = () => {
@@ -12,99 +12,120 @@ const WeatherWidget = () => {
     temperatureUnit: 'C',
     windSpeedUnit: 'm/s',
   });
-
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  const getApproxLocation = async () => {
-    const res = await fetch('https://ipwhois.app/json/');
-    const data = await res.json();
+  const getPreciseLocation = async () => {
+    if (!navigator.geolocation) {
+      return null;
+    }
 
-    return {
-      latitude: data.latitude,
-      longitude: data.longitude,
-      city: data.city,
-    };
-  };
+    try {
+      const permissionResult = navigator.permissions?.query
+        ? await navigator.permissions.query({
+            name: 'geolocation',
+          })
+        : null;
 
-  const getLocation = async (
-    callback: (location: {
+      if (permissionResult && permissionResult.state !== 'granted') {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+
+    return new Promise<{
       latitude: number;
       longitude: number;
-      city: string;
-    }) => void,
-  ) => {
-    if (navigator.geolocation) {
-      const result = await navigator.permissions.query({
-        name: 'geolocation',
-      });
+      city?: string;
+    } | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          let city: string | undefined;
 
-      if (result.state === 'granted') {
-        navigator.geolocation.getCurrentPosition(async (position) => {
-          const res = await fetch(
-            `https://api-bdc.io/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`,
-            {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
+          try {
+            const res = await fetch(
+              `https://api-bdc.io/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`,
+              {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
               },
-            },
-          );
+            );
 
-          const data = await res.json();
+            if (res.ok) {
+              const data = await res.json();
+              city = data.locality;
+            }
+          } catch {
+            city = undefined;
+          }
 
-          callback({
+          resolve({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
-            city: data.locality,
+            city,
           });
-        });
-      } else if (result.state === 'prompt') {
-        callback(await getApproxLocation());
-        navigator.geolocation.getCurrentPosition((position) => {});
-      } else if (result.state === 'denied') {
-        callback(await getApproxLocation());
-      }
-    } else {
-      callback(await getApproxLocation());
-    }
-  };
-
-  const updateWeather = async () => {
-    getLocation(async (location) => {
-      const res = await fetch(`/api/weather`, {
-        method: 'POST',
-        body: JSON.stringify({
-          lat: location.latitude,
-          lng: location.longitude,
-          measureUnit: localStorage.getItem('measureUnit') ?? 'Metric',
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.status !== 200) {
-        console.error('Error fetching weather data');
-        setLoading(false);
-        return;
-      }
-
-      setData({
-        temperature: data.temperature,
-        condition: data.condition,
-        location: location.city,
-        humidity: data.humidity,
-        windSpeed: data.windSpeed,
-        icon: data.icon,
-        temperatureUnit: data.temperatureUnit,
-        windSpeedUnit: data.windSpeedUnit,
-      });
-      setLoading(false);
+        },
+        () => resolve(null),
+        {
+          enableHighAccuracy: false,
+          maximumAge: 5 * 60 * 1000,
+          timeout: 5000,
+        },
+      );
     });
   };
 
   useEffect(() => {
-    updateWeather();
-    const intervalId = setInterval(updateWeather, 30 * 1000);
+    const updateWeather = async () => {
+      try {
+        const location = await getPreciseLocation();
+        const res = await fetch('/api/weather', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            lat: location?.latitude,
+            lng: location?.longitude,
+            city: location?.city,
+            measureUnit: localStorage.getItem('measureUnit') ?? 'Metric',
+          }),
+        });
+
+        const weatherData = await res.json();
+
+        if (!res.ok) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+
+        setData({
+          temperature: weatherData.temperature,
+          condition: weatherData.condition,
+          location: weatherData.location,
+          humidity: weatherData.humidity,
+          windSpeed: weatherData.windSpeed,
+          icon: weatherData.icon,
+          temperatureUnit: weatherData.temperatureUnit,
+          windSpeedUnit: weatherData.windSpeedUnit,
+        });
+        setError(false);
+        setLoading(false);
+      } catch {
+        setError(true);
+        setLoading(false);
+      }
+    };
+
+    void updateWeather();
+    const intervalId = setInterval(() => {
+      void updateWeather();
+    }, 30 * 1000);
+
     return () => clearInterval(intervalId);
   }, []);
 
@@ -128,14 +149,22 @@ const WeatherWidget = () => {
             </div>
           </div>
         </>
+      ) : error ? (
+        <div className="flex h-full w-full items-center justify-center text-xs text-black/60 dark:text-white/60">
+          Weather unavailable.
+        </div>
       ) : (
         <>
           <div className="flex flex-col items-center justify-center w-16 min-w-16 max-w-16 h-full">
-            <img
-              src={`/weather-ico/${data.icon}.svg`}
-              alt={data.condition}
-              className="h-10 w-auto"
-            />
+            {data.icon ? (
+              <img
+                src={`/weather-ico/${data.icon}.svg`}
+                alt={data.condition}
+                className="h-10 w-auto"
+              />
+            ) : (
+              <Cloud className="h-10 w-10 text-black/40 dark:text-white/40" />
+            )}
             <span className="text-base font-semibold text-black dark:text-white">
               {data.temperature}°{data.temperatureUnit}
             </span>

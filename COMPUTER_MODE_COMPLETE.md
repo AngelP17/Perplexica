@@ -182,7 +182,7 @@ Database migrations completed successfully
 
 ### File System Safety
 - ✅ Path traversal protection via `resolveWorkspacePath()`
-- ✅ Workspace isolation at `data/computer-workspace/`
+- ✅ Workspace isolation at the configured workspace root
 - ✅ Directory creation with `recursive: true`
 - ✅ Safe path joining with `path.join()`
 
@@ -264,7 +264,7 @@ Database migrations completed successfully
 ### Browser Tool Reliability
 - Natural language browser tasks are model-dependent
 - More reliable with explicit selectors
-- Screenshot artifacts stored in `data/computer-workspace/browser-artifacts/`
+- Screenshot artifacts stored in `<workspace>/browser-artifacts/`
 
 ---
 

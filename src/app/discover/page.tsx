@@ -39,6 +39,7 @@ const topics: { key: string; display: string }[] = [
 
 const Page = () => {
   const [discover, setDiscover] = useState<Discover[] | null>(null);
+  const [emptyStateMessage, setEmptyStateMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTopic, setActiveTopic] = useState<string>(topics[0].key);
 
@@ -58,9 +59,14 @@ const Page = () => {
         throw new Error(data.message);
       }
 
-      data.blogs = data.blogs.filter((blog: Discover) => blog.thumbnail);
+      data.blogs = Array.isArray(data.blogs)
+        ? data.blogs.filter((blog: Discover) => blog.thumbnail)
+        : [];
 
       setDiscover(data.blogs);
+      setEmptyStateMessage(
+        data.message || 'No articles are available right now.',
+      );
     } catch (err: any) {
       console.error('Error fetching data:', err.message);
       toast.error('Error fetching data');
@@ -124,6 +130,10 @@ const Page = () => {
                 fill="currentFill"
               />
             </svg>
+          </div>
+        ) : discover && discover.length === 0 ? (
+          <div className="flex min-h-[50vh] items-center justify-center px-6 text-center text-sm text-black/60 dark:text-white/60">
+            {emptyStateMessage}
           </div>
         ) : (
           <div className="flex flex-col gap-4 pb-28 pt-5 lg:pb-8 w-full">

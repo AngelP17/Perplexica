@@ -339,6 +339,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     'search',
   );
   const [swarmEnabled, setSwarmEnabled] = useState(false);
+  const interactionModeRef = useRef<'search' | 'computer'>('search');
+  const swarmEnabledRef = useRef(false);
 
   const [isMessagesLoaded, setIsMessagesLoaded] = useState(false);
 
@@ -475,6 +477,31 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           method: 'POST',
         });
 
+        if (!res.ok) {
+          let errorMessage =
+            'The previous response could not be resumed. Please retry it.';
+
+          try {
+            const data = await res.json();
+            if (typeof data.message === 'string' && data.message.trim()) {
+              errorMessage = data.message;
+            }
+          } catch {}
+
+          toast.error(errorMessage);
+          setLoading(false);
+          setResearchEnded(true);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.messageId === lastMsg.messageId
+                ? { ...msg, status: 'error' as const }
+                : msg,
+            ),
+          );
+          isReconnectingRef.current = false;
+          return;
+        }
+
         if (!res.body) throw new Error('No response body');
 
         const messageHandler = getMessageHandler(lastMsg);
@@ -503,11 +530,14 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     const savedSwarm = localStorage.getItem('swarmEnabled');
 
     if (savedMode === 'search' || savedMode === 'computer') {
+      interactionModeRef.current = savedMode;
       setInteractionMode(savedMode);
     }
 
     if (savedSwarm === 'true' || savedSwarm === 'false') {
-      setSwarmEnabled(savedSwarm === 'true');
+      const isEnabled = savedSwarm === 'true';
+      swarmEnabledRef.current = isEnabled;
+      setSwarmEnabled(isEnabled);
     }
   }, []);
 
@@ -580,11 +610,13 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const handleSetInteractionMode: ChatContext['setInteractionMode'] = (
     mode,
   ) => {
+    interactionModeRef.current = mode;
     setInteractionMode(mode);
     localStorage.setItem('interactionMode', mode);
   };
 
   const handleSetSwarmEnabled: ChatContext['setSwarmEnabled'] = (enabled) => {
+    swarmEnabledRef.current = enabled;
     setSwarmEnabled(enabled);
     localStorage.setItem('swarmEnabled', String(enabled));
   };
@@ -784,6 +816,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     messageId = messageId ?? crypto.randomBytes(7).toString('hex');
     handledMessageEndRef.current.delete(messageId);
     const backendId = crypto.randomBytes(20).toString('hex');
+    const currentInteractionMode = interactionModeRef.current;
+    const currentSwarmEnabled = swarmEnabledRef.current;
 
     const newMessage: Message = {
       messageId,
@@ -799,7 +833,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     const messageIndex = messages.findIndex((m) => m.messageId === messageId);
     const endpoint =
-      interactionMode === 'computer' ? '/api/computer' : '/api/chat';
+      currentInteractionMode === 'computer' ? '/api/computer' : '/api/chat';
 
     try {
       const res = await fetch(endpoint, {
@@ -827,7 +861,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
             providerId: chatModelProvider.providerId,
           },
           systemInstructions: localStorage.getItem('systemInstructions'),
-          ...(interactionMode === 'search'
+          ...(currentInteractionMode === 'search'
             ? {
                 files: fileIds,
                 sources: sources,
@@ -837,7 +871,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
                 },
               }
             : {
-                swarmEnabled,
+                swarmEnabled: currentSwarmEnabled,
               }),
         }),
       });

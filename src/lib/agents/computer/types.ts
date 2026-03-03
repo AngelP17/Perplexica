@@ -50,6 +50,24 @@ export type SwarmPlan = {
   agents: SwarmPlanAgent[];
 };
 
+export type SwarmAgentExecutionOutcome = {
+  role: ComputerSkillName;
+  completed: boolean;
+  iterationLimitReached: boolean;
+  hadToolErrors: boolean;
+  createdPaths: string[];
+  errors: string[];
+};
+
+export type SwarmExecutionOutcome = {
+  success: boolean;
+  hadWarnings: boolean;
+  createdPaths: string[];
+  agentOutcomes: SwarmAgentExecutionOutcome[];
+  summary: string;
+  errorMessage?: string;
+};
+
 export type FileToolResult = ComputerToolResult & {
   content?: string;
   path?: string;

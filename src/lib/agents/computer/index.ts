@@ -91,7 +91,34 @@ class ComputerAgent {
         }
       }
 
-      await SwarmExecutor.executeSwarm(plan, input, session, computerBlockId);
+      const outcome = await SwarmExecutor.executeSwarm(
+        plan,
+        input,
+        session,
+        computerBlockId,
+      );
+
+      if (!outcome.success) {
+        session.emit('error', {
+          data: outcome.errorMessage || 'Computer task did not complete.',
+        });
+
+        await db
+          .update(messages)
+          .set({
+            status: 'error',
+            responseBlocks: session.getAllBlocks(),
+          })
+          .where(
+            and(
+              eq(messages.chatId, input.chatId),
+              eq(messages.messageId, input.messageId),
+            ),
+          )
+          .execute();
+
+        return;
+      }
 
       session.emit('end', {});
 

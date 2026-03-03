@@ -229,7 +229,7 @@ $ docker build -f Dockerfile.slim .
 | Safety Feature | Status | Implementation |
 |---------------|--------|----------------|
 | Path traversal protection | ✅ | resolveWorkspacePath() in tools.ts |
-| Workspace isolation | ✅ | All ops under data/computer-workspace/ |
+| Workspace isolation | ✅ | All ops stay under the configured workspace root |
 | Python timeout | ✅ | 30s limit in execute_python |
 | Temp file cleanup | ✅ | Unlink in execute_python |
 | Text truncation | ✅ | 12,000 char limit |
@@ -422,7 +422,7 @@ Swarm mode:
 - If file ops fail: Check workspace directory exists
 
 ### Workspace Location
-- Default: `{CWD}/data/computer-workspace/`
+- Default: `{CWD}/`
 - Override: Set `COMPUTER_WORKSPACE_DIR` env variable
 - Browser artifacts: `{workspace}/browser-artifacts/`
 

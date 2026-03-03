@@ -42,7 +42,7 @@ This document reflects the repository as it exists now, including validation fix
 - local persistence for mode/toggle state via `localStorage`
 
 ### Artifact model
-- browser screenshots are stored as files under `data/computer-workspace/browser-artifacts/`
+- browser screenshots are stored as files under `<workspace>/browser-artifacts/`
 - stored messages keep file paths and textual summaries, not inline base64 screenshots
 
 ## End-to-End Request Flow
@@ -139,7 +139,7 @@ Implemented tools:
   - `browser_scrape`
 
 ### Workspace and safety model
-- workspace root defaults to `path.join(process.cwd(), 'data', 'computer-workspace')`
+- workspace root defaults to `process.cwd()`
 - `COMPUTER_WORKSPACE_DIR` can override the workspace root
 - file tools reject path traversal through `resolveWorkspacePath()`
 - Python executes with `cwd` set to the workspace root
@@ -250,7 +250,7 @@ Computer mode is not a separate chat system. It is an additional execution mode 
 - `POST /api/reconnect/[id]` replay during an in-flight computer task after the session/reconnect fixes
 - `node .next/standalone/server.js` startup after `npm run build` copied runtime assets into `.next/standalone/`
 - browser artifact persistence to:
-  - `data/computer-workspace/browser-artifacts/`
+- `<workspace>/browser-artifacts/`
 - UI smoke on the running app:
   - switch Search -> Computer
   - confirm swarm toggle visibility

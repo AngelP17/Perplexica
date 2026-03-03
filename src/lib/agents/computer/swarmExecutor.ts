@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import path from 'node:path';
 import z from 'zod';
 import { repairJson } from '@toolsycc/json-repair';
 import BaseLLM from '@/lib/models/base/llm';
@@ -22,10 +23,13 @@ import {
   ComputerAgentInput,
   ComputerSkillName,
   ComputerToolResult,
+  SwarmAgentExecutionOutcome,
+  SwarmExecutionOutcome,
   SwarmPlan,
   SwarmPlanAgent,
 } from './types';
 import { getSkillTools, skillRegistry } from './skills/registry';
+import { getWorkspaceBase } from './tools';
 
 const executionRoleSchema = z.enum(['coder', 'researcher', 'browser']);
 
@@ -144,14 +148,14 @@ const renderToolResult = (result: ComputerToolResult) => {
 
 const getIterationLimit = (mode: ComputerAgentInput['config']['mode']) => {
   if (mode === 'speed') {
-    return 2;
+    return 3;
   }
 
   if (mode === 'balanced') {
-    return 4;
+    return 5;
   }
 
-  return 6;
+  return 7;
 };
 
 const getExecutionTemperature = (
@@ -166,6 +170,137 @@ const getExecutionTemperature = (
   }
 
   return 0.3;
+};
+
+const getWorkspaceRoot = () => path.resolve(getWorkspaceBase());
+
+const getDisplayPath = (targetPath: string) => {
+  const relativePath = path.relative(getWorkspaceRoot(), targetPath);
+
+  if (!relativePath) {
+    return '.';
+  }
+
+  if (
+    !relativePath.startsWith('..') &&
+    !path.isAbsolute(relativePath)
+  ) {
+    return relativePath;
+  }
+
+  return targetPath;
+};
+
+const uniqueStrings = (values: string[]) => {
+  return Array.from(new Set(values.filter(Boolean)));
+};
+
+const getCreatedPathsFromToolResult = (
+  toolName: string,
+  result: ComputerToolResult,
+) => {
+  if (
+    (toolName !== 'write_file' && toolName !== 'browser_screenshot') ||
+    typeof result.path !== 'string' ||
+    !result.path.trim()
+  ) {
+    return [];
+  }
+
+  return [result.path];
+};
+
+const getExecutionWarnings = (outcome: SwarmExecutionOutcome) => {
+  return uniqueStrings(
+    outcome.agentOutcomes
+      .filter((agentOutcome) => agentOutcome.completed && agentOutcome.hadToolErrors)
+      .flatMap((agentOutcome) => agentOutcome.errors)
+      .map((error) => truncateText(error, 180)),
+  );
+};
+
+const getBlockingErrors = (outcome: SwarmExecutionOutcome) => {
+  return uniqueStrings(
+    outcome.agentOutcomes
+      .filter((agentOutcome) => !agentOutcome.completed)
+      .flatMap((agentOutcome) => agentOutcome.errors)
+      .map((error) => truncateText(error, 180)),
+  );
+};
+
+const buildExecutionErrorMessage = (outcome: SwarmExecutionOutcome) => {
+  const blockingErrors = getBlockingErrors(outcome);
+  const hasPathTraversal = blockingErrors.some((error) =>
+    error.includes('Path traversal detected'),
+  );
+
+  if (hasPathTraversal) {
+    return 'Computer task stalled after trying to access files outside the workspace. Use relative workspace paths and retry.';
+  }
+
+  if (
+    outcome.agentOutcomes.some((agentOutcome) => agentOutcome.iterationLimitReached)
+  ) {
+    return 'Computer task reached the iteration limit before finishing.';
+  }
+
+  return blockingErrors[0] || 'Computer task did not complete.';
+};
+
+const buildExecutionSummary = (outcome: SwarmExecutionOutcome) => {
+  const createdPaths = uniqueStrings(outcome.createdPaths).map(getDisplayPath);
+
+  if (outcome.success) {
+    const parts = ['Task completed in computer mode.'];
+
+    if (createdPaths.length > 0) {
+      parts.push(`Created: ${createdPaths.map((filePath) => `\`${filePath}\``).join(', ')}.`);
+    }
+
+    const warnings = getExecutionWarnings(outcome);
+
+    if (warnings.length > 0) {
+      parts.push('The run recovered from earlier tool errors. Review Computer Steps above for the full trace.');
+    }
+
+    if (createdPaths.length === 0 && warnings.length === 0) {
+      parts.push('Review Computer Steps above for the full trace.');
+    }
+
+    return parts.join(' ');
+  }
+
+  const blockingErrors = getBlockingErrors(outcome);
+  const hasPathTraversal = blockingErrors.some((error) =>
+    error.includes('Path traversal detected'),
+  );
+  const parts = ['Task incomplete.'];
+
+  if (createdPaths.length > 0) {
+    parts.push(
+      `Created before stopping: ${createdPaths.map((filePath) => `\`${filePath}\``).join(', ')}.`,
+    );
+  }
+
+  if (
+    outcome.agentOutcomes.some((agentOutcome) => agentOutcome.iterationLimitReached)
+  ) {
+    parts.push('At least one agent reached the iteration limit before finishing.');
+  }
+
+  if (hasPathTraversal) {
+    parts.push(
+      `File tools only work inside the workspace \`${getWorkspaceRoot()}\` using relative paths like \`.\` or \`notes/file.txt\`, or absolute paths that stay under that root.`,
+    );
+  }
+
+  if (blockingErrors.length > 0) {
+    parts.push(`Blocking issues: ${blockingErrors.join(' | ')}.`);
+  }
+
+  parts.push('Review the Computer Steps above and retry.');
+
+  return parts.join(' ');
 };
 
 export class SwarmExecutor {
@@ -344,7 +479,7 @@ export class SwarmExecutor {
     blockId: string,
     sharedHistory: Message[],
     agentMessages: Message[],
-  ) {
+  ): Promise<ComputerToolResult> {
     const tools = getSkillTools(agent.role);
     const tool = tools.find((candidate) => candidate.name === toolCall.name);
 
@@ -399,6 +534,8 @@ export class SwarmExecutor {
 
     agentMessages.push(toolMessage);
     sharedHistory.push(toolMessage);
+
+    return result;
   }
 
   static async executeSubAgent(
@@ -407,16 +544,28 @@ export class SwarmExecutor {
     session: SessionManager,
     blockId: string,
     sharedHistory: Message[],
-  ) {
+  ): Promise<SwarmAgentExecutionOutcome> {
+    const outcome: SwarmAgentExecutionOutcome = {
+      role: agent.role,
+      completed: false,
+      iterationLimitReached: false,
+      hadToolErrors: false,
+      createdPaths: [],
+      errors: [],
+    };
     const skill = skillRegistry[agent.role];
 
     if (!skill) {
+      const error = `Unknown skill "${agent.role}" was skipped.`;
+
       appendObservationStep(session, blockId, {
         type: 'observation',
-        observation: `Unknown skill "${agent.role}" was skipped.`,
+        observation: error,
         success: false,
       });
-      return;
+      outcome.errors.push(error);
+
+      return outcome;
     }
 
     const llm = await this.resolveLLMForSkill(agent.role, input);
@@ -440,12 +589,13 @@ export class SwarmExecutor {
           `Role: ${skill.role}`,
           `Assigned task: ${agent.task}`,
           `Available tools: ${tools.map((tool) => tool.name).join(', ') || 'none'}`,
+          `Workspace root: ${getWorkspaceRoot()}`,
+          'All file paths must stay inside this workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under this workspace root.',
           'Use tools when they are needed, and reply directly when the sub-task is complete.',
         ].join('\n'),
       },
     ];
 
-    let completed = false;
     const maxIterations = getIterationLimit(input.config.mode);
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -477,12 +627,12 @@ export class SwarmExecutor {
           });
         }
 
-        completed = true;
+        outcome.completed = true;
         break;
       }
 
       for (const toolCall of response.toolCalls) {
-        await this.executeToolCall(
+        const result = await this.executeToolCall(
           toolCall,
           agent,
           session,
@@ -490,23 +640,60 @@ export class SwarmExecutor {
           sharedHistory,
           agentMessages,
         );
+
+        if (!result.success) {
+          outcome.hadToolErrors = true;
+          outcome.errors.push(
+            `[${agent.role}] ${toolCall.name}: ${result.error || 'Tool execution failed.'}`,
+          );
+        }
+
+        outcome.createdPaths.push(
+          ...getCreatedPathsFromToolResult(toolCall.name, result),
+        );
       }
     }
 
-    if (!completed) {
+    if (!outcome.completed) {
+      outcome.iterationLimitReached = true;
+      outcome.errors.push(
+        `[${agent.role}] Reached the iteration limit before explicitly finishing the task.`,
+      );
       appendObservationStep(session, blockId, {
         type: 'observation',
         observation: `[${agent.role}] Reached the iteration limit before explicitly finishing the task.`,
         success: false,
       });
     }
+
+    outcome.createdPaths = uniqueStrings(outcome.createdPaths);
+
+    return outcome;
   }
 
   static async streamFinalSummary(
     input: ComputerAgentInput,
     session: SessionManager,
     sharedHistory: Message[],
+    outcome: SwarmExecutionOutcome,
   ) {
+    if (!outcome.success) {
+      session.emitBlock({
+        id: crypto.randomUUID(),
+        type: 'text',
+        data: outcome.summary,
+      });
+
+      return;
+    }
+
+    const summaryContext = {
+      success: outcome.success,
+      hadWarnings: outcome.hadWarnings,
+      createdPaths: uniqueStrings(outcome.createdPaths).map(getDisplayPath),
+      warnings: getExecutionWarnings(outcome),
+    };
+
     const summaryStream = input.config.llm.streamText({
       messages: [
         {
@@ -523,8 +710,12 @@ export class SwarmExecutor {
         ...sharedHistory,
         {
           role: 'user',
-          content:
-            'Write the final user-facing update now. Mention created files or notable outputs when they exist.',
+          content: [
+            `Execution outcome: ${JSON.stringify(summaryContext)}`,
+            'Write the final user-facing update now.',
+            'Mention created files or notable outputs when they exist.',
+            'Do not claim a file was created unless it appears in createdPaths.',
+          ].join('\n'),
         },
       ],
       options: {
@@ -571,7 +762,7 @@ export class SwarmExecutor {
       session.emitBlock({
         id: crypto.randomUUID(),
         type: 'text',
-        data: 'Execution finished. Review the steps above for the full trace.',
+        data: outcome.summary,
       });
     }
   }
@@ -581,13 +772,35 @@ export class SwarmExecutor {
     input: ComputerAgentInput,
     session: SessionManager,
     blockId: string,
-  ) {
+  ): Promise<SwarmExecutionOutcome> {
     const sharedHistory: Message[] = [];
+    const agentOutcomes: SwarmAgentExecutionOutcome[] = [];
 
     for (const agent of plan.agents) {
-      await this.executeSubAgent(agent, input, session, blockId, sharedHistory);
+      agentOutcomes.push(
+        await this.executeSubAgent(agent, input, session, blockId, sharedHistory),
+      );
     }
 
-    await this.streamFinalSummary(input, session, sharedHistory);
+    const outcome: SwarmExecutionOutcome = {
+      success: agentOutcomes.every((agentOutcome) => agentOutcome.completed),
+      hadWarnings: agentOutcomes.some(
+        (agentOutcome) => agentOutcome.completed && agentOutcome.hadToolErrors,
+      ),
+      createdPaths: uniqueStrings(
+        agentOutcomes.flatMap((agentOutcome) => agentOutcome.createdPaths),
+      ),
+      agentOutcomes,
+      summary: '',
+    };
+
+    outcome.summary = buildExecutionSummary(outcome);
+    outcome.errorMessage = outcome.success
+      ? undefined
+      : buildExecutionErrorMessage(outcome);
+
+    await this.streamFinalSummary(input, session, sharedHistory, outcome);
+
+    return outcome;
   }
 }

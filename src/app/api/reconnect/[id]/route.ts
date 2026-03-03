@@ -1,4 +1,7 @@
 import SessionManager from '@/lib/session';
+import db from '@/lib/db';
+import { messages } from '@/lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 
 export const POST = async (
   req: Request,
@@ -9,8 +12,26 @@ export const POST = async (
 
     const session = SessionManager.getSession(id);
 
-    if (!session) {
-      return Response.json({ message: 'Session not found' }, { status: 404 });
+    if (!session || session.isStale()) {
+      if (session?.isStale()) {
+        session.destroy();
+      }
+
+      await db
+        .update(messages)
+        .set({
+          status: 'error',
+        })
+        .where(and(eq(messages.backendId, id), eq(messages.status, 'answering')))
+        .execute();
+
+      return Response.json(
+        {
+          message:
+            'Session expired or stalled. The previous response can no longer continue. Retry the message to run it again.',
+        },
+        { status: 410 },
+      );
     }
 
     const responseStream = new TransformStream();

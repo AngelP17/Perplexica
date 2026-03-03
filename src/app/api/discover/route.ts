@@ -1,4 +1,4 @@
-import { searchSearxng } from '@/lib/searxng';
+import { isSearxngError, searchSearxng } from '@/lib/searxng';
 
 const websitesForTopic = {
   tech: {
@@ -33,7 +33,7 @@ export const GET = async (req: Request) => {
       (params.get('mode') as 'normal' | 'preview') || 'normal';
     const topic: Topic = (params.get('topic') as Topic) || 'tech';
 
-    const selectedTopic = websitesForTopic[topic];
+    const selectedTopic = websitesForTopic[topic] ?? websitesForTopic.tech;
 
     let data = [];
 
@@ -84,8 +84,22 @@ export const GET = async (req: Request) => {
         status: 200,
       },
     );
-  } catch (err) {
-    console.error(`An error occurred in discover route: ${err}`);
+  } catch (error) {
+    if (isSearxngError(error)) {
+      console.warn(`Discover route is unavailable: ${error.message}`);
+
+      return Response.json(
+        {
+          blogs: [],
+          message: error.message,
+        },
+        {
+          status: 200,
+        },
+      );
+    }
+
+    console.error(`An error occurred in discover route: ${error}`);
     return Response.json(
       {
         message: 'An error has occurred',
