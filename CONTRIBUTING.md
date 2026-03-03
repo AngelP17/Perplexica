@@ -8,6 +8,86 @@ Perplexica is a modern AI chat application with advanced search capabilities.
 
 Perplexica's codebase is organized as follows:
 
+```mermaid
+graph TD
+    subgraph Frontend["Frontend Layer"]
+        Components[src/components]
+        App[src/app]
+        Hooks[src/lib/hooks]
+        InputActions[src/components/MessageInputActions]
+    end
+    
+    subgraph API["API Routes"]
+        ChatAPI[src/app/api/chat]
+        ComputerAPI[src/app/api/computer]
+        SearchAPI[src/app/api/search]
+        ImagesAPI[src/app/api/images]
+        ReconnectAPI[src/app/api/reconnect]
+    end
+    
+    subgraph Agents["Agent System"]
+        SearchAgent[src/lib/agents/search]
+        ComputerAgent[src/lib/agents/computer]
+        Classifier[classifier.ts]
+        Researcher[researcher/]
+        Widgets[src/lib/agents/search/widgets]
+        SwarmExecutor[swarmExecutor.ts]
+    end
+    
+    subgraph ResearchTools["Research Tools"]
+        Actions[src/lib/agents/search/researcher/actions]
+        WebSearch[webSearch.ts]
+        AcademicSearch[academicSearch.ts]
+        ScrapeURL[scrapeURL.ts]
+    end
+
+    subgraph ComputerTools["Computer Tools"]
+        ComputerSkills[src/lib/agents/computer/skills]
+        BrowserSkill[browserSkill.ts]
+        ToolFile[tools.ts]
+    end
+    
+    subgraph Models["Models"]
+        Registry[src/lib/models/registry.ts]
+        Providers[src/lib/models/providers]
+    end
+    
+    subgraph Data["Data Layer"]
+        DB[src/lib/db]
+        Schema[schema.ts]
+        SearxNG[src/lib/searxng.ts]
+    end
+    
+    subgraph Prompts["Prompts"]
+        PromptDir[src/lib/prompts/search/]
+        ClassifierPrompt[classifier.ts]
+        ResearcherPrompt[researcher.ts]
+        WriterPrompt[writer.ts]
+    end
+    
+    App --> ChatAPI
+    App --> ComputerAPI
+    ChatAPI --> SearchAgent
+    ComputerAPI --> ComputerAgent
+    SearchAgent --> Classifier
+    SearchAgent --> Researcher
+    SearchAgent --> Widgets
+    ComputerAgent --> SwarmExecutor
+    SwarmExecutor --> ComputerSkills
+    ComputerSkills --> BrowserSkill
+    ComputerSkills --> ToolFile
+    Researcher --> Actions
+    Actions --> WebSearch
+    Actions --> AcademicSearch
+    Actions --> ScrapeURL
+    SearchAgent --> Registry
+    Registry --> Providers
+    SearchAgent --> DB
+    SearchAgent --> PromptDir
+    Classifier --> ClassifierPrompt
+    Researcher --> ResearcherPrompt
+```
+
 - **UI Components and Pages**:
   - **Components (`src/components`)**: Reusable UI components.
   - **Pages and Routes (`src/app`)**: Next.js app directory structure with page components.
@@ -15,7 +95,9 @@ Perplexica's codebase is organized as follows:
   - **API Routes (`src/app/api`)**: Server endpoints implemented with Next.js route handlers.
 - **Backend Logic (`src/lib`)**: Contains all the backend functionality including search, database, and API logic.
   - The search system lives in `src/lib/agents/search`.
+  - The computer-agent system lives in `src/lib/agents/computer`.
   - The search pipeline is split into classification, research, widgets, and writing.
+  - The computer pipeline is split into route handling, skills/tools, swarm execution, and block streaming.
   - Database functionality is in `src/lib/db`.
   - Chat model and embedding model providers are in `src/lib/models/providers`, and models are loaded via `src/lib/models/registry.ts`.
   - Prompt templates are in `src/lib/prompts`.
@@ -31,6 +113,12 @@ If you are not sure where to start, use this section as a map.
   - `src/lib/agents/search` contains the core chat and search pipeline.
   - `classifier.ts` decides whether research is needed and what should run.
   - `researcher/` gathers information in the background.
+
+- **Computer mode behavior**
+
+  - `src/lib/agents/computer` contains the computer-agent execution path.
+  - `swarmExecutor.ts` handles planning, skill selection, and tool execution.
+  - `skills/` defines tool access for browser, coder, researcher, and operator roles.
 
 - **Add or change a search capability**
 

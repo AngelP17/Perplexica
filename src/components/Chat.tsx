@@ -67,7 +67,6 @@ const Chat = () => {
           <Fragment key={section.message.messageId}>
             <MessageBox
               section={section}
-              sectionIndex={i}
               dividerRef={isLast ? dividerRef : undefined}
               isLast={isLast}
             />

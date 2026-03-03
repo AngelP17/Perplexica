@@ -1,0 +1,206 @@
+import { execFile } from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import z from 'zod';
+import { ComputerTool, FileToolResult, PythonToolResult } from './types';
+
+const execFileAsync = promisify(execFile);
+
+const MAX_TEXT_OUTPUT_CHARS = 12_000;
+
+export const truncateText = (
+  value: string,
+  maxLength: number = MAX_TEXT_OUTPUT_CHARS,
+) => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}\n...[truncated ${value.length - maxLength} characters]`;
+};
+
+export const getWorkspaceBase = () => {
+  return (
+    process.env.COMPUTER_WORKSPACE_DIR?.trim() ||
+    path.join(process.cwd(), 'data', 'computer-workspace')
+  );
+};
+
+const resolveWorkspacePath = (targetPath: string = '.') => {
+  const workspaceBase = path.resolve(getWorkspaceBase());
+  const resolvedPath = path.resolve(workspaceBase, targetPath);
+
+  if (
+    resolvedPath !== workspaceBase &&
+    !resolvedPath.startsWith(`${workspaceBase}${path.sep}`)
+  ) {
+    throw new Error('Path traversal detected');
+  }
+
+  return resolvedPath;
+};
+
+const formatExecError = (error: unknown): PythonToolResult => {
+  const err = error as NodeJS.ErrnoException & {
+    stdout?: string | Buffer;
+    stderr?: string | Buffer;
+    code?: string | number;
+    signal?: string;
+    killed?: boolean;
+  };
+
+  return {
+    success: false,
+    error:
+      err.killed || err.signal === 'SIGTERM'
+        ? 'Python execution timed out after 30 seconds'
+        : err.message,
+    stdout: truncateText(String(err.stdout ?? '')),
+    stderr: truncateText(String(err.stderr ?? '')),
+    exitCode:
+      typeof err.code === 'number' ? err.code : err.signal ? 1 : undefined,
+    timedOut: Boolean(err.killed || err.signal === 'SIGTERM'),
+  };
+};
+
+const readFileSchema = z.object({
+  filepath: z.string().min(1, 'File path is required'),
+});
+
+const writeFileSchema = z.object({
+  filepath: z.string().min(1, 'File path is required'),
+  content: z.string(),
+});
+
+const listFilesSchema = z.object({
+  directory: z.string().optional(),
+});
+
+const executePythonSchema = z.object({
+  code: z.string().min(1, 'Python code is required'),
+});
+
+const readFileTool: ComputerTool<typeof readFileSchema> = {
+  name: 'read_file',
+  description:
+    'Read a UTF-8 text file inside the workspace. Required args: filepath (relative path such as "notes/todo.txt").',
+  schema: readFileSchema,
+  execute: async (params): Promise<FileToolResult> => {
+    try {
+      const safePath = resolveWorkspacePath(params.filepath);
+      const content = await fs.readFile(safePath, 'utf-8');
+
+      return {
+        success: true,
+        path: safePath,
+        content: truncateText(content),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  },
+};
+
+const writeFileTool: ComputerTool<typeof writeFileSchema> = {
+  name: 'write_file',
+  description:
+    'Write UTF-8 content to a file inside the workspace, creating parent folders if needed. Required args: filepath (relative path such as "notes/todo.txt"), content.',
+  schema: writeFileSchema,
+  execute: async (params): Promise<FileToolResult> => {
+    try {
+      const safePath = resolveWorkspacePath(params.filepath);
+      await fs.mkdir(path.dirname(safePath), { recursive: true });
+      await fs.writeFile(safePath, params.content, 'utf-8');
+
+      return {
+        success: true,
+        path: safePath,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  },
+};
+
+const listFilesTool: ComputerTool<typeof listFilesSchema> = {
+  name: 'list_files',
+  description:
+    'List files and directories in a workspace folder. Optional arg: directory (defaults to "."). Directory names end with a trailing slash.',
+  schema: listFilesSchema,
+  execute: async (params): Promise<FileToolResult> => {
+    try {
+      const safePath = resolveWorkspacePath(params.directory || '.');
+      await fs.mkdir(safePath, { recursive: true });
+
+      const entries = await fs.readdir(safePath, { withFileTypes: true });
+      const content = entries
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
+        .join('\n');
+
+      return {
+        success: true,
+        path: safePath,
+        content: content || '[empty directory]',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  },
+};
+
+export const fileTools = {
+  read_file: readFileTool,
+  write_file: writeFileTool,
+  list_files: listFilesTool,
+};
+
+export const pythonTool: ComputerTool<typeof executePythonSchema> = {
+  name: 'execute_python',
+  description:
+    'Execute Python 3 code inside the workspace and capture stdout and stderr. Required args: code.',
+  schema: executePythonSchema,
+  execute: async (params): Promise<PythonToolResult> => {
+    const workspaceBase = path.resolve(getWorkspaceBase());
+    const tempFilePath = path.join(
+      workspaceBase,
+      `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.py`,
+    );
+
+    try {
+      await fs.mkdir(workspaceBase, { recursive: true });
+      await fs.writeFile(tempFilePath, params.code, 'utf-8');
+
+      const result = await execFileAsync('python3', [tempFilePath], {
+        cwd: workspaceBase,
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      });
+
+      return {
+        success: true,
+        path: tempFilePath,
+        stdout: truncateText(String(result.stdout ?? '')),
+        stderr: truncateText(String(result.stderr ?? '')),
+        exitCode: 0,
+      };
+    } catch (error) {
+      return {
+        path: tempFilePath,
+        ...formatExecError(error),
+      };
+    } finally {
+      await fs.unlink(tempFilePath).catch(() => undefined);
+    }
+  },
+};

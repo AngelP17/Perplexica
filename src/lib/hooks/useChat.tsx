@@ -37,6 +37,8 @@ type ChatContext = {
   sources: string[];
   chatId: string | undefined;
   optimizationMode: string;
+  interactionMode: 'search' | 'computer';
+  swarmEnabled: boolean;
   isMessagesLoaded: boolean;
   loading: boolean;
   notFound: boolean;
@@ -48,6 +50,8 @@ type ChatContext = {
   researchEnded: boolean;
   setResearchEnded: (ended: boolean) => void;
   setOptimizationMode: (mode: string) => void;
+  setInteractionMode: (mode: 'search' | 'computer') => void;
+  setSwarmEnabled: (enabled: boolean) => void;
   setSources: (sources: string[]) => void;
   setFiles: (files: File[]) => void;
   setFileIds: (fileIds: string[]) => void;
@@ -238,6 +242,44 @@ const loadMessages = async (
   setIsMessagesLoaded(true);
 };
 
+const parseNdjsonStream = async (
+  stream: ReadableStream<Uint8Array>,
+  onMessage: (data: any) => void | Promise<void>,
+) => {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffered = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffered += decoder.decode(value, { stream: true });
+
+    const lines = buffered.split('\n');
+    buffered = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      await onMessage(JSON.parse(trimmed));
+    }
+  }
+
+  const trailing = buffered.trim();
+
+  if (trailing) {
+    await onMessage(JSON.parse(trailing));
+  }
+};
+
 export const chatContext = createContext<ChatContext>({
   chatHistory: [],
   chatId: '',
@@ -245,6 +287,7 @@ export const chatContext = createContext<ChatContext>({
   files: [],
   sources: [],
   hasError: false,
+  interactionMode: 'search',
   isMessagesLoaded: false,
   isReady: false,
   loading: false,
@@ -253,6 +296,7 @@ export const chatContext = createContext<ChatContext>({
   sections: [],
   notFound: false,
   optimizationMode: '',
+  swarmEnabled: false,
   chatModelProvider: { key: '', providerId: '' },
   embeddingModelProvider: { key: '', providerId: '' },
   researchEnded: false,
@@ -262,6 +306,8 @@ export const chatContext = createContext<ChatContext>({
   setFiles: () => {},
   setSources: () => {},
   setOptimizationMode: () => {},
+  setInteractionMode: () => {},
+  setSwarmEnabled: () => {},
   setChatModelProvider: () => {},
   setEmbeddingModelProvider: () => {},
   setResearchEnded: () => {},
@@ -289,6 +335,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
   const [sources, setSources] = useState<string[]>(['web']);
   const [optimizationMode, setOptimizationMode] = useState('speed');
+  const [interactionMode, setInteractionMode] = useState<'search' | 'computer'>(
+    'search',
+  );
+  const [swarmEnabled, setSwarmEnabled] = useState(false);
 
   const [isMessagesLoaded, setIsMessagesLoaded] = useState(false);
 
@@ -427,32 +477,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (!res.body) throw new Error('No response body');
 
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder('utf-8');
-
-        let partialChunk = '';
-
         const messageHandler = getMessageHandler(lastMsg);
 
         try {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            partialChunk += decoder.decode(value, { stream: true });
-
-            try {
-              const messages = partialChunk.split('\n');
-              for (const msg of messages) {
-                if (!msg.trim()) continue;
-                const json = JSON.parse(msg);
-                messageHandler(json);
-              }
-              partialChunk = '';
-            } catch (error) {
-              console.warn('Incomplete JSON, waiting for next chunk...');
-            }
-          }
+          await parseNdjsonStream(res.body, messageHandler);
         } finally {
           isReconnectingRef.current = false;
         }
@@ -468,6 +496,19 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
       setHasError,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const savedMode = localStorage.getItem('interactionMode');
+    const savedSwarm = localStorage.getItem('swarmEnabled');
+
+    if (savedMode === 'search' || savedMode === 'computer') {
+      setInteractionMode(savedMode);
+    }
+
+    if (savedSwarm === 'true' || savedSwarm === 'false') {
+      setSwarmEnabled(savedSwarm === 'true');
+    }
   }, []);
 
   useEffect(() => {
@@ -536,6 +577,18 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     sendMessage(messageToRewrite.query, messageToRewrite.messageId, true);
   };
 
+  const handleSetInteractionMode: ChatContext['setInteractionMode'] = (
+    mode,
+  ) => {
+    setInteractionMode(mode);
+    localStorage.setItem('interactionMode', mode);
+  };
+
+  const handleSetSwarmEnabled: ChatContext['setSwarmEnabled'] = (enabled) => {
+    setSwarmEnabled(enabled);
+    localStorage.setItem('swarmEnabled', String(enabled));
+  };
+
   useEffect(() => {
     if (isReady && initialMessage && isConfigReady) {
       if (!isConfigReady) {
@@ -554,6 +607,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
       if (data.type === 'error') {
         toast.error(data.data);
         setLoading(false);
+        setResearchEnded(true);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.messageId === messageId
@@ -602,10 +656,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           }),
         );
 
-        if (
-          (data.block.type === 'source' && data.block.data.length > 0) ||
-          data.block.type === 'text'
-        ) {
+        if (data.block.type !== 'suggestion') {
           setMessageAppeared(true);
         }
       }
@@ -627,6 +678,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
             return msg;
           }),
         );
+        setMessageAppeared(true);
       }
 
       if (data.type === 'messageEnd') {
@@ -635,6 +687,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         handledMessageEndRef.current.add(messageId);
+        setResearchEnded(true);
 
         const currentMsg = messagesRef.current.find(
           (msg) => msg.messageId === messageId,
@@ -716,7 +769,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     messageId,
     rewrite = false,
   ) => {
-    if (loading || !message) return;
+    const trimmedMessage = message.trim();
+
+    if (loading || !trimmedMessage) return;
+
     setLoading(true);
     setResearchEnded(false);
     setMessageAppeared(false);
@@ -726,13 +782,14 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     messageId = messageId ?? crypto.randomBytes(7).toString('hex');
+    handledMessageEndRef.current.delete(messageId);
     const backendId = crypto.randomBytes(20).toString('hex');
 
     const newMessage: Message = {
       messageId,
       chatId: chatId!,
       backendId,
-      query: message,
+      query: trimmedMessage,
       responseBlocks: [],
       status: 'answering',
       createdAt: new Date(),
@@ -741,67 +798,77 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     setMessages((prevMessages) => [...prevMessages, newMessage]);
 
     const messageIndex = messages.findIndex((m) => m.messageId === messageId);
+    const endpoint =
+      interactionMode === 'computer' ? '/api/computer' : '/api/chat';
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: message,
-        message: {
-          messageId: messageId,
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: trimmedMessage,
+          message: {
+            messageId: messageId,
+            chatId: chatId!,
+            content: trimmedMessage,
+          },
           chatId: chatId!,
-          content: message,
-        },
-        chatId: chatId!,
-        files: fileIds,
-        sources: sources,
-        optimizationMode: optimizationMode,
-        history: rewrite
-          ? chatHistory.current.slice(
-              0,
-              messageIndex === -1 ? undefined : messageIndex,
-            )
-          : chatHistory.current,
-        chatModel: {
-          key: chatModelProvider.key,
-          providerId: chatModelProvider.providerId,
-        },
-        embeddingModel: {
-          key: embeddingModelProvider.key,
-          providerId: embeddingModelProvider.providerId,
-        },
-        systemInstructions: localStorage.getItem('systemInstructions'),
-      }),
-    });
+          optimizationMode: optimizationMode,
+          history: rewrite
+            ? chatHistory.current.slice(
+                0,
+                messageIndex === -1 ? undefined : messageIndex * 2,
+              )
+            : chatHistory.current,
+          chatModel: {
+            key: chatModelProvider.key,
+            providerId: chatModelProvider.providerId,
+          },
+          systemInstructions: localStorage.getItem('systemInstructions'),
+          ...(interactionMode === 'search'
+            ? {
+                files: fileIds,
+                sources: sources,
+                embeddingModel: {
+                  key: embeddingModelProvider.key,
+                  providerId: embeddingModelProvider.providerId,
+                },
+              }
+            : {
+                swarmEnabled,
+              }),
+        }),
+      });
 
-    if (!res.body) throw new Error('No response body');
-
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    let partialChunk = '';
-
-    const messageHandler = getMessageHandler(newMessage);
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      partialChunk += decoder.decode(value, { stream: true });
-
-      try {
-        const messages = partialChunk.split('\n');
-        for (const msg of messages) {
-          if (!msg.trim()) continue;
-          const json = JSON.parse(msg);
-          messageHandler(json);
-        }
-        partialChunk = '';
-      } catch (error) {
-        console.warn('Incomplete JSON, waiting for next chunk...');
+      if (!res.ok) {
+        const errorPayload = await res
+          .json()
+          .catch(() => ({ message: 'Request failed' }));
+        throw new Error(errorPayload.message || 'Request failed');
       }
+
+      if (!res.body) {
+        throw new Error('No response body');
+      }
+
+      const messageHandler = getMessageHandler(newMessage);
+      await parseNdjsonStream(res.body, messageHandler);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to send message';
+
+      toast.error(errorMessage);
+      setLoading(false);
+      setResearchEnded(true);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId
+            ? { ...msg, status: 'error' as const }
+            : msg,
+        ),
+      );
     }
   };
 
@@ -816,16 +883,20 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         sources,
         chatId,
         hasError,
+        interactionMode,
         isMessagesLoaded,
         isReady,
         loading,
         messageAppeared,
         notFound,
         optimizationMode,
+        swarmEnabled,
         setFileIds,
         setFiles,
         setSources,
         setOptimizationMode,
+        setInteractionMode: handleSetInteractionMode,
+        setSwarmEnabled: handleSetSwarmEnabled,
         rewrite,
         sendMessage,
         setChatModelProvider,

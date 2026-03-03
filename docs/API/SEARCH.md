@@ -4,6 +4,46 @@
 
 Perplexica’s Search API makes it easy to use our AI-powered search engine. You can run different types of searches, pick the models you want to use, and get the most recent info. Follow the following headings to learn more about Perplexica's search API.
 
+
+```mermaid
+sequenceDiagram
+    participant Client as API Client
+    participant API as /api/search
+    participant Session as SessionManager
+    participant SA as APISearchAgent
+    participant C as Classifier
+    participant R as Researcher
+    participant LLM as LLM Provider
+    
+    Client->>API: POST /api/search{query, chatModel, sources}
+    API->>Session: createSession()
+    API->>SA: searchAsync(session, input)
+    SA->>C: classify(query)
+    C->>LLM: generateObject
+    LLM-->>C: classification
+    C-->>SA: {skipSearch, standaloneFollowUp, widgets}
+    
+    alt Research Needed
+        SA->>R: research()
+        loop Until done
+            R->>LLM: streamText with tools
+            LLM-->>R: tool calls
+            R->>R: Execute search actions
+        end
+        R-->>SA: findings
+    end
+    
+    SA->>LLM: streamText (writer)
+    loop Streaming
+        LLM-->>SA: content chunk
+        SA-->>Session: emit response/searchResults
+        Session-->>API: replayable events
+        API-->>Client: NDJSON line stream
+    end
+    
+    API-->>Client: {message, sources}
+```
+
 ## Endpoints
 
 ### Get Available Providers and Models

@@ -14,9 +14,48 @@ Perplexica is a **privacy-focused AI answering engine** that runs entirely on yo
 
 Want to know more about its architecture and how it works? You can read it [here](https://github.com/ItzCrazyKns/Perplexica/tree/master/docs/architecture/README.md).
 
+## Architecture
+
+```mermaid
+flowchart TB
+    U[User Query] --> UI[Web UI]
+    UI --> Mode{Interaction Mode}
+
+    Mode -->|Search| ChatAPI[/api/chat]
+    Mode -->|Computer| ComputerAPI[/api/computer]
+
+    ChatAPI --> SearchAgent[Search Agent]
+    SearchAgent --> Classifier[Classifier]
+    SearchAgent --> Researcher[Researcher]
+    SearchAgent --> Widgets[Widgets]
+    Researcher --> SearchBackend[SearXNG / Upload Search]
+
+    ComputerAPI --> ComputerAgent[Computer Agent]
+    ComputerAgent --> SwarmExecutor[Swarm Executor]
+    SwarmExecutor --> SkillRegistry[Skill Registry]
+    SkillRegistry --> FileTools[File / Python Tools]
+    SkillRegistry --> BrowserTools[Browser Tools]
+
+    SearchAgent --> SessionManager[SessionManager]
+    ComputerAgent --> SessionManager
+    SessionManager --> DB[(SQLite)]
+    BrowserTools --> Workspace[(Workspace Artifacts)]
+
+    SearchAgent --> Models[LLM Providers]
+    ComputerAgent --> Models
+    Models --> Ollama[Ollama]
+    Models --> OpenAI[OpenAI]
+    Models --> Anthropic[Anthropic]
+
+    style Models fill:#f9f,stroke:#333
+    style SearchBackend fill:#bbf,stroke:#333
+```
+
 ## ✨ Features
 
 🤖 **Support for all major AI providers** - Use local LLMs through Ollama or connect to OpenAI, Anthropic Claude, Google Gemini, Groq, and more. Mix and match models based on your needs.
+
+🖥️ **Computer mode** - Run local file, Python, and browser tasks through a streamed computer agent, with optional swarm planning for multi-step execution.
 
 ⚡ **Smart search modes** - Choose Speed Mode when you need quick answers, Balanced Mode for everyday searches, or Quality Mode for deep research.
 

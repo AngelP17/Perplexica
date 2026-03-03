@@ -6,9 +6,11 @@ import Optimization from './MessageInputActions/Optimization';
 import Attach from './MessageInputActions/Attach';
 import { useChat } from '@/lib/hooks/useChat';
 import ModelSelector from './MessageInputActions/ChatModelSelector';
+import InteractionMode from './MessageInputActions/InteractionMode';
+import SwarmToggle from './MessageInputActions/SwarmToggle';
 
 const EmptyChatMessageInput = () => {
-  const { sendMessage } = useChat();
+  const { interactionMode, loading, sendMessage } = useChat();
 
   /* const [copilotEnabled, setCopilotEnabled] = useState(false); */
   const [message, setMessage] = useState('');
@@ -43,11 +45,12 @@ const EmptyChatMessageInput = () => {
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (loading) return;
         sendMessage(message);
         setMessage('');
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !loading) {
           e.preventDefault();
           sendMessage(message);
           setMessage('');
@@ -62,18 +65,26 @@ const EmptyChatMessageInput = () => {
           onChange={(e) => setMessage(e.target.value)}
           minRows={2}
           className="px-2 bg-transparent placeholder:text-[15px] placeholder:text-black/50 dark:placeholder:text-white/50 text-sm text-black dark:text-white resize-none focus:outline-none w-full max-h-24 lg:max-h-36 xl:max-h-48"
-          placeholder="Ask anything..."
+          placeholder={
+            interactionMode === 'computer'
+              ? 'Tell the computer agent what to do...'
+              : 'Ask anything...'
+          }
         />
         <div className="flex flex-row items-center justify-between mt-4">
-          <Optimization />
+          <div className="flex flex-row items-center space-x-1">
+            <InteractionMode />
+            <Optimization />
+          </div>
           <div className="flex flex-row items-center space-x-2">
             <div className="flex flex-row items-center space-x-1">
-              <Sources />
+              {interactionMode === 'search' && <Sources />}
               <ModelSelector />
-              <Attach />
+              <SwarmToggle />
+              {interactionMode === 'search' && <Attach />}
             </div>
             <button
-              disabled={message.trim().length === 0}
+              disabled={message.trim().length === 0 || loading}
               className="bg-sky-500 text-white disabled:text-black/50 dark:disabled:text-white/50 disabled:bg-[#e0e0dc] dark:disabled:bg-[#ececec21] hover:bg-opacity-85 transition duration-100 rounded-full p-2"
             >
               <ArrowRight className="bg-background" size={17} />

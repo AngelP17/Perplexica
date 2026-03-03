@@ -115,9 +115,45 @@ export type ResearchBlock = {
   };
 };
 
+export type PlanningComputerSubStep = {
+  id: string;
+  type: 'planning';
+  plan: string;
+  agents?: Array<{ role: string; task: string }>;
+};
+
+export type ActionComputerSubStep = {
+  id: string;
+  type: 'action';
+  action: string;
+  tool: string;
+  status: 'running' | 'completed' | 'error';
+};
+
+export type ObservationComputerSubStep = {
+  id: string;
+  type: 'observation';
+  observation: string;
+  success: boolean;
+};
+
+export type ComputerBlockSubStep =
+  | PlanningComputerSubStep
+  | ActionComputerSubStep
+  | ObservationComputerSubStep;
+
+export type ComputerBlock = {
+  id: string;
+  type: 'computer';
+  data: {
+    subSteps: ComputerBlockSubStep[];
+  };
+};
+
 export type Block =
   | TextBlock
   | SourceBlock
   | SuggestionBlock
   | WidgetBlock
-  | ResearchBlock;
+  | ResearchBlock
+  | ComputerBlock;

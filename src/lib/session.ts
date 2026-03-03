@@ -42,9 +42,17 @@ class SessionManager {
     this.emitter.removeAllListeners();
   }
 
+  private cloneEventData<T>(data: T): T {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(data);
+    }
+
+    return JSON.parse(JSON.stringify(data)) as T;
+  }
+
   emit(event: string, data: any) {
     this.emitter.emit(event, data);
-    this.events.push({ event, data });
+    this.events.push({ event, data: this.cloneEventData(data) });
   }
 
   emitBlock(block: Block) {

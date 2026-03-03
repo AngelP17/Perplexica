@@ -17,7 +17,9 @@ export const POST = async (
     const writer = responseStream.writable.getWriter();
     const encoder = new TextEncoder();
 
-    const disconnect = session.subscribe((event, data) => {
+    let disconnect = () => {};
+
+    disconnect = session.subscribe((event, data) => {
       if (event === 'data') {
         if (data.type === 'block') {
           writer.write(
@@ -73,7 +75,7 @@ export const POST = async (
 
     req.signal.addEventListener('abort', () => {
       disconnect();
-      writer.close();
+      writer.close().catch(() => undefined);
     });
 
     return new Response(responseStream.readable, {

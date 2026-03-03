@@ -11,6 +11,7 @@ import {
   Layers3,
   Plus,
   CornerDownRight,
+  Terminal,
 } from 'lucide-react';
 import Markdown, { MarkdownToJSX, RuleType } from 'markdown-to-jsx';
 import Copy from './MessageActions/Copy';
@@ -23,7 +24,8 @@ import ThinkBox from './ThinkBox';
 import { useChat, Section } from '@/lib/hooks/useChat';
 import Citation from './MessageRenderer/Citation';
 import AssistantSteps from './AssistantSteps';
-import { ResearchBlock } from '@/lib/types';
+import ComputerSteps from './ComputerSteps';
+import { ComputerBlock, ResearchBlock } from '@/lib/types';
 import Renderer from './Widgets/Renderer';
 import CodeBlock from './MessageRenderer/CodeBlock';
 
@@ -41,23 +43,15 @@ const ThinkTagProcessor = ({
 
 const MessageBox = ({
   section,
-  sectionIndex,
   dividerRef,
   isLast,
 }: {
   section: Section;
-  sectionIndex: number;
   dividerRef?: MutableRefObject<HTMLDivElement | null>;
   isLast: boolean;
 }) => {
-  const {
-    loading,
-    sendMessage,
-    rewrite,
-    messages,
-    researchEnded,
-    chatHistory,
-  } = useChat();
+  const { loading, sendMessage, rewrite, researchEnded, chatHistory } =
+    useChat();
 
   const parsedMessage = section.parsedTextBlocks.join('\n\n');
   const speechMessage = section.speechMessage || '';
@@ -69,6 +63,17 @@ const MessageBox = ({
   );
 
   const sources = sourceBlocks.flatMap((block) => block.data);
+  const researchBlocks = section.message.responseBlocks.filter(
+    (block): block is ResearchBlock =>
+      block.type === 'research' && block.data.subSteps.length > 0,
+  );
+  const computerBlocks = section.message.responseBlocks.filter(
+    (block): block is ComputerBlock =>
+      block.type === 'computer' && block.data.subSteps.length > 0,
+  );
+  const isComputerMessage = section.message.responseBlocks.some(
+    (block) => block.type === 'computer',
+  );
 
   const hasContent = section.parsedTextBlocks.length > 0;
 
@@ -128,24 +133,30 @@ const MessageBox = ({
             </div>
           )}
 
-          {section.message.responseBlocks
-            .filter(
-              (block): block is ResearchBlock =>
-                block.type === 'research' && block.data.subSteps.length > 0,
-            )
-            .map((researchBlock) => (
-              <div key={researchBlock.id} className="flex flex-col space-y-2">
-                <AssistantSteps
-                  block={researchBlock}
-                  status={section.message.status}
-                  isLast={isLast}
-                />
-              </div>
-            ))}
+          {researchBlocks.map((researchBlock) => (
+            <div key={researchBlock.id} className="flex flex-col space-y-2">
+              <AssistantSteps
+                block={researchBlock}
+                status={section.message.status}
+                isLast={isLast}
+              />
+            </div>
+          ))}
+
+          {computerBlocks.map((computerBlock) => (
+            <div key={computerBlock.id} className="flex flex-col space-y-2">
+              <ComputerSteps
+                block={computerBlock}
+                status={section.message.status}
+                isLast={isLast}
+              />
+            </div>
+          ))}
 
           {isLast &&
             loading &&
             !researchEnded &&
+            !isComputerMessage &&
             !section.message.responseBlocks.some(
               (b) => b.type === 'research' && b.data.subSteps.length > 0,
             ) && (
@@ -153,6 +164,18 @@ const MessageBox = ({
                 <Disc3 className="w-4 h-4 text-black dark:text-white animate-spin" />
                 <span className="text-sm text-black/70 dark:text-white/70">
                   Brainstorming...
+                </span>
+              </div>
+            )}
+
+          {isLast &&
+            loading &&
+            isComputerMessage &&
+            computerBlocks.length === 0 && (
+              <div className="flex items-center gap-2 rounded-lg border border-light-200 bg-light-secondary p-3 dark:border-dark-200 dark:bg-dark-secondary">
+                <Terminal className="h-4 w-4 animate-pulse text-black dark:text-white" />
+                <span className="text-sm text-black/70 dark:text-white/70">
+                  Preparing the computer agent...
                 </span>
               </div>
             )}
@@ -268,7 +291,7 @@ const MessageBox = ({
           </div>
         </div>
 
-        {hasContent && (
+        {hasContent && !isComputerMessage && (
           <div className="lg:sticky lg:top-20 flex flex-col items-center space-y-3 w-full lg:w-3/12 z-30 h-full pb-4">
             <SearchImages
               query={section.message.query}
