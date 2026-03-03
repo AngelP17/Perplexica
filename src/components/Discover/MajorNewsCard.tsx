@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import { Discover } from '@/app/discover/page';
 import Link from 'next/link';
 

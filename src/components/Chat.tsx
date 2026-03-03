@@ -56,7 +56,7 @@ const Chat = () => {
       scroll();
       lastScrolledRef.current = sections.length;
     }
-  }, [messages]);
+  }, [messages, sections.length]);
 
   return (
     <div className="flex flex-col space-y-6 pt-8 pb-44 lg:pb-28 sm:mx-4 md:mx-8">

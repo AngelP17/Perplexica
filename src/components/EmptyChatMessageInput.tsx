@@ -7,6 +7,7 @@ import Attach from './MessageInputActions/Attach';
 import { useChat } from '@/lib/hooks/useChat';
 import ModelSelector from './MessageInputActions/ChatModelSelector';
 import InteractionMode from './MessageInputActions/InteractionMode';
+import PersonaSelector from './MessageInputActions/PersonaSelector';
 import SwarmToggle from './MessageInputActions/SwarmToggle';
 
 const EmptyChatMessageInput = () => {
@@ -86,6 +87,7 @@ const EmptyChatMessageInput = () => {
               {interactionMode === 'search' && <Sources />}
               <ModelSelector />
               <SwarmToggle />
+              <PersonaSelector />
               {interactionMode === 'search' && <Attach />}
             </div>
             <button

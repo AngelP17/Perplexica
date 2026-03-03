@@ -2,6 +2,8 @@ import { z } from 'zod';
 import ModelRegistry from '@/lib/models/registry';
 import { ModelWithProvider } from '@/lib/models/types';
 import ComputerAgent from '@/lib/agents/computer';
+import { isComputerPersonaId } from '@/lib/agents/computer/personas/catalog';
+import type { ComputerPersonaId } from '@/lib/agents/computer/personas/types';
 import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
 import db from '@/lib/db';
@@ -22,6 +24,22 @@ const chatModelSchema: z.ZodType<ModelWithProvider> = z.object({
   key: z.string({ message: 'Chat model key must be provided' }),
 });
 
+const specialistPersonaSchema = z
+  .string()
+  .trim()
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (!value) {
+      return undefined;
+    }
+
+    return value;
+  })
+  .refine((value) => !value || isComputerPersonaId(value), {
+    message: 'Unknown specialist persona',
+  });
+
 const bodySchema = z.object({
   message: messageSchema,
   optimizationMode: z.enum(['speed', 'balanced', 'quality'], {
@@ -34,6 +52,7 @@ const bodySchema = z.object({
     .default([]),
   chatModel: chatModelSchema,
   systemInstructions: z.string().nullable().optional().default(''),
+  specialistPersonaId: specialistPersonaSchema,
 });
 
 type Body = z.infer<typeof bodySchema>;
@@ -175,6 +194,8 @@ export const POST = async (req: Request) => {
         mode: body.optimizationMode,
         swarmEnabled: body.swarmEnabled,
         systemInstructions: body.systemInstructions || '',
+        specialistPersonaId:
+          body.specialistPersonaId as ComputerPersonaId | undefined,
         resolveChatModel: async (modelKey: string) =>
           registry.loadChatModel(body.chatModel.providerId, modelKey),
       },

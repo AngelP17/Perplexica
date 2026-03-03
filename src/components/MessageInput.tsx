@@ -5,6 +5,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import AttachSmall from './MessageInputActions/AttachSmall';
 import { useChat } from '@/lib/hooks/useChat';
 import InteractionMode from './MessageInputActions/InteractionMode';
+import PersonaSelector from './MessageInputActions/PersonaSelector';
 import SwarmToggle from './MessageInputActions/SwarmToggle';
 
 const MessageInput = () => {
@@ -69,6 +70,7 @@ const MessageInput = () => {
         <div className="mr-1 flex items-center gap-1">
           <InteractionMode compact />
           <SwarmToggle />
+          <PersonaSelector compact />
           {interactionMode === 'search' && <AttachSmall />}
         </div>
       )}
@@ -107,6 +109,7 @@ const MessageInput = () => {
           <div className="flex items-center gap-1">
             <InteractionMode compact />
             <SwarmToggle />
+            <PersonaSelector compact />
             {interactionMode === 'search' && <AttachSmall />}
           </div>
           <button

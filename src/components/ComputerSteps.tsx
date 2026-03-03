@@ -182,6 +182,25 @@ const PopoverContent = ({
 
                 {step.type === 'planning' && (
                   <div className="mt-1.5 space-y-2">
+                    {step.persona && (
+                      <div className="rounded-lg border border-light-200 bg-light-100 p-2 dark:border-dark-200 dark:bg-dark-100">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: step.persona.color }}
+                          />
+                          <p className="text-xs font-medium text-black dark:text-white">
+                            {step.persona.name}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-black/70 dark:text-white/70">
+                          {step.persona.description}
+                        </p>
+                        <p className="mt-1 text-[11px] uppercase tracking-wide text-black/45 dark:text-white/45">
+                          {step.persona.strengths.join(' · ')}
+                        </p>
+                      </div>
+                    )}
                     <p className="text-xs leading-relaxed text-black/70 dark:text-white/70">
                       {step.plan}
                     </p>

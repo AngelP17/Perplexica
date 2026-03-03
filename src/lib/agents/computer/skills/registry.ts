@@ -1,5 +1,5 @@
 import { browserSkill } from './browserSkill';
-import { fileTools, pythonTool } from '../tools';
+import { fileTools, pythonTool, utilityTools } from '../tools';
 import { ComputerSkillName, ComputerTool } from '../types';
 
 export type ComputerSkill = {
@@ -38,6 +38,7 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
       'write_file',
       'list_files',
       'execute_python',
+      'get_current_time',
       'browser_navigate',
       'browser_click',
       'browser_type',
@@ -48,6 +49,7 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
       'You are a practical computer operator with access to file tools, Python execution, and browser automation.',
       'For file tasks: use write_file, read_file, list_files.',
       'For Python: use execute_python with complete code.',
+      'For time or timezone questions: use get_current_time.',
       'For web tasks: (1) browser_navigate to URL, (2) browser_screenshot to see page, (3) browser_scrape with CSS selectors.',
       'CRITICAL: When calling tools, provide EVERY required argument as a proper JSON object.',
       'Example: browser_navigate needs {"url":"https://example.com"}, not {"website":"example.com"}.',
@@ -60,11 +62,18 @@ export const skillRegistry: Record<ComputerSkillName, ComputerSkill> = {
     name: 'coder',
     description: 'Write, read, and run code within the workspace.',
     role: 'Code Writer and Executor',
-    tools: ['write_file', 'read_file', 'list_files', 'execute_python'],
+    tools: [
+      'write_file',
+      'read_file',
+      'list_files',
+      'execute_python',
+      'get_current_time',
+    ],
     model: 'qwen2.5-coder:14b',
     systemPrompt: [
       'You are an expert coding agent.',
       'Write clean code, execute it when necessary, and verify the result.',
+      'For time or timezone questions: use get_current_time instead of browser search.',
       'When you call a tool, provide every required argument exactly as named in the tool schema.',
       'All file paths must stay inside the workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under the workspace root.',
       'Stay inside the workspace and prefer concrete artifacts over speculative explanations.',
@@ -113,6 +122,10 @@ export const getAllTools = () => {
   const toolMap = new Map<string, ComputerTool>();
 
   Object.values(fileTools).forEach((tool) => {
+    toolMap.set(tool.name, tool);
+  });
+
+  Object.values(utilityTools).forEach((tool) => {
     toolMap.set(tool.name, tool);
   });
 

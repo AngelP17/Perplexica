@@ -4,6 +4,7 @@ import { Message } from '@/components/ChatWindow';
 import { Block } from '@/lib/types';
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -18,6 +19,11 @@ import { MinimalProvider } from '../models/types';
 import { getAutoMediaSearch } from '../config/clientRegistry';
 import { applyPatch } from 'rfc6902';
 import { Widget } from '@/components/ChatWindow';
+import {
+  COMPUTER_PERSONA_STORAGE_KEY,
+  isComputerPersonaId,
+} from '@/lib/agents/computer/personas/catalog';
+import type { ComputerPersonaId } from '@/lib/agents/computer/personas/types';
 
 export type Section = {
   message: Message;
@@ -39,6 +45,7 @@ type ChatContext = {
   optimizationMode: string;
   interactionMode: 'search' | 'computer';
   swarmEnabled: boolean;
+  selectedPersonaId: ComputerPersonaId | null;
   isMessagesLoaded: boolean;
   loading: boolean;
   notFound: boolean;
@@ -52,6 +59,7 @@ type ChatContext = {
   setOptimizationMode: (mode: string) => void;
   setInteractionMode: (mode: 'search' | 'computer') => void;
   setSwarmEnabled: (enabled: boolean) => void;
+  setSelectedPersonaId: (personaId: ComputerPersonaId | null) => void;
   setSources: (sources: string[]) => void;
   setFiles: (files: File[]) => void;
   setFileIds: (fileIds: string[]) => void;
@@ -297,6 +305,7 @@ export const chatContext = createContext<ChatContext>({
   notFound: false,
   optimizationMode: '',
   swarmEnabled: false,
+  selectedPersonaId: null,
   chatModelProvider: { key: '', providerId: '' },
   embeddingModelProvider: { key: '', providerId: '' },
   researchEnded: false,
@@ -308,6 +317,7 @@ export const chatContext = createContext<ChatContext>({
   setOptimizationMode: () => {},
   setInteractionMode: () => {},
   setSwarmEnabled: () => {},
+  setSelectedPersonaId: () => {},
   setChatModelProvider: () => {},
   setEmbeddingModelProvider: () => {},
   setResearchEnded: () => {},
@@ -339,8 +349,11 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     'search',
   );
   const [swarmEnabled, setSwarmEnabled] = useState(false);
+  const [selectedPersonaId, setSelectedPersonaId] =
+    useState<ComputerPersonaId | null>(null);
   const interactionModeRef = useRef<'search' | 'computer'>('search');
   const swarmEnabledRef = useRef(false);
+  const selectedPersonaIdRef = useRef<ComputerPersonaId | null>(null);
 
   const [isMessagesLoaded, setIsMessagesLoaded] = useState(false);
 
@@ -457,7 +470,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const isReconnectingRef = useRef(false);
   const handledMessageEndRef = useRef<Set<string>>(new Set());
 
-  const checkReconnect = async () => {
+  const checkReconnect = useCallback(async () => {
     if (isReconnectingRef.current) return;
 
     setIsReady(true);
@@ -513,7 +526,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
     }
-  };
+  }, [messages]);
 
   useEffect(() => {
     checkConfig(
@@ -528,6 +541,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const savedMode = localStorage.getItem('interactionMode');
     const savedSwarm = localStorage.getItem('swarmEnabled');
+    const savedPersonaId = localStorage.getItem(COMPUTER_PERSONA_STORAGE_KEY);
 
     if (savedMode === 'search' || savedMode === 'computer') {
       interactionModeRef.current = savedMode;
@@ -538,6 +552,13 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
       const isEnabled = savedSwarm === 'true';
       swarmEnabledRef.current = isEnabled;
       setSwarmEnabled(isEnabled);
+    }
+
+    if (savedPersonaId && isComputerPersonaId(savedPersonaId)) {
+      selectedPersonaIdRef.current = savedPersonaId;
+      setSelectedPersonaId(savedPersonaId);
+    } else if (savedPersonaId) {
+      localStorage.removeItem(COMPUTER_PERSONA_STORAGE_KEY);
     }
   }, []);
 
@@ -592,7 +613,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     } else {
       setIsReady(false);
     }
-  }, [isMessagesLoaded, isConfigReady, newChatCreated]);
+  }, [checkReconnect, isConfigReady, isMessagesLoaded, newChatCreated]);
 
   const rewrite = (messageId: string) => {
     const index = messages.findIndex((msg) => msg.messageId === messageId);
@@ -619,6 +640,20 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     swarmEnabledRef.current = enabled;
     setSwarmEnabled(enabled);
     localStorage.setItem('swarmEnabled', String(enabled));
+  };
+
+  const handleSetSelectedPersonaId: ChatContext['setSelectedPersonaId'] = (
+    personaId,
+  ) => {
+    selectedPersonaIdRef.current = personaId;
+    setSelectedPersonaId(personaId);
+
+    if (personaId) {
+      localStorage.setItem(COMPUTER_PERSONA_STORAGE_KEY, personaId);
+      return;
+    }
+
+    localStorage.removeItem(COMPUTER_PERSONA_STORAGE_KEY);
   };
 
   useEffect(() => {
@@ -818,6 +853,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     const backendId = crypto.randomBytes(20).toString('hex');
     const currentInteractionMode = interactionModeRef.current;
     const currentSwarmEnabled = swarmEnabledRef.current;
+    const currentSelectedPersonaId = selectedPersonaIdRef.current;
 
     const newMessage: Message = {
       messageId,
@@ -872,6 +908,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
               }
             : {
                 swarmEnabled: currentSwarmEnabled,
+                specialistPersonaId: currentSelectedPersonaId,
               }),
         }),
       });
@@ -925,12 +962,14 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         notFound,
         optimizationMode,
         swarmEnabled,
+        selectedPersonaId,
         setFileIds,
         setFiles,
         setSources,
         setOptimizationMode,
         setInteractionMode: handleSetInteractionMode,
         setSwarmEnabled: handleSetSwarmEnabled,
+        setSelectedPersonaId: handleSetSelectedPersonaId,
         rewrite,
         sendMessage,
         setChatModelProvider,

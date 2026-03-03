@@ -120,50 +120,87 @@ class ConfigManager {
     this.initialize();
   }
 
+  private ensureConfigDirectory() {
+    fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
+  }
+
+  private writeConfig(config: Config) {
+    this.ensureConfigDirectory();
+    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+  }
+
+  private backupInvalidConfig() {
+    if (!fs.existsSync(this.configPath)) {
+      return;
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const parsedPath = path.parse(this.configPath);
+    const backupPath = path.join(
+      parsedPath.dir,
+      `${parsedPath.name}.invalid-${timestamp}${parsedPath.ext}`,
+    );
+
+    fs.copyFileSync(this.configPath, backupPath);
+    console.warn(`Backed up invalid config to ${backupPath}`);
+  }
+
+  private readConfigFromDisk(): Config | null {
+    if (!fs.existsSync(this.configPath)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        console.error(
+          `Error parsing config file at ${this.configPath}:`,
+          err,
+        );
+        this.backupInvalidConfig();
+        console.log('Restoring default config after backing up invalid file.');
+        this.writeConfig(this.currentConfig);
+        return this.currentConfig;
+      }
+
+      console.log('Unknown error reading config file:', err);
+      return null;
+    }
+  }
+
+  private refreshConfigFromDisk() {
+    const diskConfig = this.readConfigFromDisk();
+
+    if (!diskConfig) {
+      return;
+    }
+
+    this.currentConfig = this.migrateConfig(diskConfig);
+  }
+
   private initialize() {
     this.initializeConfig();
     this.initializeFromEnv();
   }
 
   private saveConfig() {
-    fs.writeFileSync(
-      this.configPath,
-      JSON.stringify(this.currentConfig, null, 2),
-    );
+    this.writeConfig(this.currentConfig);
   }
 
   private initializeConfig() {
+    this.ensureConfigDirectory();
     const exists = fs.existsSync(this.configPath);
     if (!exists) {
-      fs.writeFileSync(
-        this.configPath,
-        JSON.stringify(this.currentConfig, null, 2),
-      );
+      this.writeConfig(this.currentConfig);
     } else {
-      try {
-        this.currentConfig = JSON.parse(
-          fs.readFileSync(this.configPath, 'utf-8'),
-        );
-      } catch (err) {
-        if (err instanceof SyntaxError) {
-          console.error(
-            `Error parsing config file at ${this.configPath}:`,
-            err,
-          );
-          console.log(
-            'Loading default config and overwriting the existing file.',
-          );
-          fs.writeFileSync(
-            this.configPath,
-            JSON.stringify(this.currentConfig, null, 2),
-          );
-          return;
-        } else {
-          console.log('Unknown error reading config file:', err);
-        }
+      const diskConfig = this.readConfigFromDisk();
+
+      if (!diskConfig) {
+        return;
       }
 
-      this.currentConfig = this.migrateConfig(this.currentConfig);
+      this.currentConfig = this.migrateConfig(diskConfig);
     }
   }
 
@@ -238,6 +275,8 @@ class ConfigManager {
   }
 
   public getConfig(key: string, defaultValue?: any): any {
+    this.refreshConfigFromDisk();
+
     const nested = key.split('.');
     let obj: any = this.currentConfig;
 
@@ -365,6 +404,7 @@ class ConfigManager {
   }
 
   public isSetupComplete() {
+    this.refreshConfigFromDisk();
     return this.currentConfig.setupComplete;
   }
 
@@ -381,6 +421,7 @@ class ConfigManager {
   }
 
   public getCurrentConfig(): Config {
+    this.refreshConfigFromDisk();
     return JSON.parse(JSON.stringify(this.currentConfig));
   }
 }

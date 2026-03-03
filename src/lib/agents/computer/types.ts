@@ -2,12 +2,14 @@ import z from 'zod';
 import BaseLLM from '@/lib/models/base/llm';
 import { Tool } from '@/lib/models/types';
 import { ChatTurnMessage } from '@/lib/types';
+import type { ComputerPersonaId } from './personas';
 
 export type ComputerAgentConfig = {
   llm: BaseLLM<any>;
   mode: 'speed' | 'balanced' | 'quality';
   swarmEnabled: boolean;
   systemInstructions: string;
+  specialistPersonaId?: ComputerPersonaId;
   resolveChatModel?: (modelKey: string) => Promise<BaseLLM<any>>;
 };
 

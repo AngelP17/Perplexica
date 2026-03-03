@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import { Cloud, Wind } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

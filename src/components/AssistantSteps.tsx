@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import {
   Brain,
@@ -71,7 +72,7 @@ const AssistantSteps = ({
     } else if (status === 'answering' && isLast) {
       setIsExpanded(true);
     }
-  }, [researchEnded, status]);
+  }, [isLast, researchEnded, status]);
 
   if (!block || block.data.subSteps.length === 0) return null;
 

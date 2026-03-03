@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { Clock, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';

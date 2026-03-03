@@ -4,6 +4,10 @@ import { messages } from '@/lib/db/schema';
 import SessionManager from '@/lib/session';
 import { ComputerBlock } from '@/lib/types';
 import { and, eq, gt } from 'drizzle-orm';
+import {
+  getComputerPersonaById,
+  toComputerPersonaSummary,
+} from './personas';
 import { SwarmExecutor } from './swarmExecutor';
 import { ComputerAgentInput } from './types';
 
@@ -60,10 +64,15 @@ class ComputerAgent {
     } as ComputerBlock);
 
     try {
+      const selectedPersona = getComputerPersonaById(
+        input.config.specialistPersonaId,
+      );
       const plan = input.config.swarmEnabled
         ? await SwarmExecutor.createSwarmPlan(input, session, computerBlockId)
         : {
-            plan: 'Swarm mode is disabled, so a single general-purpose operator will execute the task.',
+            plan: selectedPersona
+              ? `Swarm mode is disabled, so a single general-purpose operator will execute the task under the ${selectedPersona.name} persona.`
+              : 'Swarm mode is disabled, so a single general-purpose operator will execute the task.',
             agents: [{ role: 'operator' as const, task: input.task }],
           };
 
@@ -79,6 +88,9 @@ class ComputerAgent {
               role: agent.role,
               task: agent.task,
             })),
+            persona: selectedPersona
+              ? toComputerPersonaSummary(selectedPersona)
+              : undefined,
           });
 
           session.updateBlock(computerBlockId, [

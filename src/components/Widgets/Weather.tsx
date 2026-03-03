@@ -1,8 +1,9 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { getMeasurementUnit } from '@/lib/config/clientRegistry';
 import { Wind, Droplets, Gauge } from 'lucide-react';
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useState, useCallback } from 'react';
 
 type WeatherWidgetProps = {
   location: string;
@@ -232,15 +233,15 @@ const Weather = ({
   const tempUnitLabel = isImperial ? '°F' : '°C';
   const windUnitLabel = isImperial ? 'mph' : 'km/h';
 
-  const formatTemp = (celsius: number) => {
+  const formatTemp = useCallback((celsius: number) => {
     if (!Number.isFinite(celsius)) return 0;
     return Math.round(isImperial ? (celsius * 9) / 5 + 32 : celsius);
-  };
+  }, [isImperial]);
 
-  const formatWind = (speedKmh: number) => {
+  const formatWind = useCallback((speedKmh: number) => {
     if (!Number.isFinite(speedKmh)) return 0;
     return Math.round(isImperial ? speedKmh * 0.621371 : speedKmh);
-  };
+  }, [isImperial]);
 
   useEffect(() => {
     const checkDarkMode = () => {
@@ -286,7 +287,7 @@ const Weather = ({
         precipitation: daily.precipitation_probability_max[idx + 1] || 0,
       };
     });
-  }, [daily, isDarkMode, isImperial]);
+  }, [daily, formatTemp, isDarkMode]);
 
   if (!current || !daily || !daily.time || daily.time.length === 0) {
     return (

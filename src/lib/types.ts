@@ -1,4 +1,5 @@
 import { ToolCall } from './models/types';
+import type { ComputerPersonaSummary } from './agents/computer/personas/types';
 
 export type SystemMessage = {
   role: 'system';
@@ -120,6 +121,7 @@ export type PlanningComputerSubStep = {
   type: 'planning';
   plan: string;
   agents?: Array<{ role: string; task: string }>;
+  persona?: ComputerPersonaSummary;
 };
 
 export type ActionComputerSubStep = {

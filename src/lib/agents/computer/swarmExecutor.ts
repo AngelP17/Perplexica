@@ -30,6 +30,11 @@ import {
 } from './types';
 import { getSkillTools, skillRegistry } from './skills/registry';
 import { getWorkspaceBase } from './tools';
+import {
+  getComputerPersonaById,
+  toComputerPersonaSummary,
+  type ComputerPersona,
+} from './personas';
 
 const executionRoleSchema = z.enum(['coder', 'researcher', 'browser']);
 
@@ -172,6 +177,60 @@ const getExecutionTemperature = (
   return 0.3;
 };
 
+type PersonaScope = 'planner' | 'executor' | 'summary';
+
+const getPersonaOverlay = (
+  persona: ComputerPersona | undefined,
+  scope: PersonaScope,
+) => {
+  if (!persona) {
+    return '';
+  }
+
+  const baseLines = [
+    `Active specialist persona: ${persona.name}`,
+    `Persona strengths: ${persona.strengths.join(', ')}`,
+    persona.systemPrompt,
+  ];
+
+  if (scope === 'planner') {
+    return [
+      ...baseLines,
+      'You are still the swarm planner.',
+      'Return ONLY valid JSON matching the required schema.',
+      'Shape the plan around this persona, keep handoffs explicit, and add a verification-oriented final step when the task changes code, files, or visible behavior.',
+    ].join('\n');
+  }
+
+  if (scope === 'executor') {
+    return [
+      ...baseLines,
+      'You are still the assigned execution skill.',
+      'Stay within the available tools and the exact assigned task, but apply this persona as your quality bar.',
+      'Before you declare completion, verify the result at the highest level this persona would expect.',
+    ].join('\n');
+  }
+
+  return [
+    ...baseLines,
+    'Write the final user-facing update in this persona style while staying fully grounded in the execution outcome and tool trace.',
+  ].join('\n');
+};
+
+const withPersonaOverlay = (
+  basePrompt: string,
+  persona: ComputerPersona | undefined,
+  scope: PersonaScope,
+) => {
+  const overlay = getPersonaOverlay(persona, scope);
+
+  if (!overlay) {
+    return basePrompt;
+  }
+
+  return `${basePrompt}\n\n${overlay}`;
+};
+
 const getWorkspaceRoot = () => path.resolve(getWorkspaceBase());
 
 const getDisplayPath = (targetPath: string) => {
@@ -310,12 +369,19 @@ export class SwarmExecutor {
     blockId: string,
   ): Promise<SwarmPlan> {
     const maxRetries = 2;
+    const selectedPersona = getComputerPersonaById(
+      input.config.specialistPersonaId,
+    );
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const systemPrompt = withSystemInstructions(
-          skillRegistry.planner.systemPrompt,
-          input.config.systemInstructions,
+        const systemPrompt = withPersonaOverlay(
+          withSystemInstructions(
+            skillRegistry.planner.systemPrompt,
+            input.config.systemInstructions,
+          ),
+          selectedPersona,
+          'planner',
         );
 
         const userPrompt = [
@@ -404,6 +470,9 @@ export class SwarmExecutor {
             role: agent.role,
             task: agent.task,
           })),
+          persona: selectedPersona
+            ? toComputerPersonaSummary(selectedPersona)
+            : undefined,
         });
 
         console.log(
@@ -436,6 +505,9 @@ export class SwarmExecutor {
             role: agent.role,
             task: agent.task,
           })),
+          persona: selectedPersona
+            ? toComputerPersonaSummary(selectedPersona)
+            : undefined,
         });
 
         return fallbackPlan;
@@ -554,6 +626,9 @@ export class SwarmExecutor {
       errors: [],
     };
     const skill = skillRegistry[agent.role];
+    const selectedPersona = getComputerPersonaById(
+      input.config.specialistPersonaId,
+    );
 
     if (!skill) {
       const error = `Unknown skill "${agent.role}" was skipped.`;
@@ -573,9 +648,13 @@ export class SwarmExecutor {
     const agentMessages: Message[] = [
       {
         role: 'system',
-        content: withSystemInstructions(
-          skill.systemPrompt,
-          input.config.systemInstructions,
+        content: withPersonaOverlay(
+          withSystemInstructions(
+            skill.systemPrompt,
+            input.config.systemInstructions,
+          ),
+          selectedPersona,
+          'executor',
         ),
       },
       {
@@ -588,11 +667,16 @@ export class SwarmExecutor {
         content: [
           `Role: ${skill.role}`,
           `Assigned task: ${agent.task}`,
+          selectedPersona
+            ? `Supervising persona: ${selectedPersona.name} - ${selectedPersona.description}`
+            : null,
           `Available tools: ${tools.map((tool) => tool.name).join(', ') || 'none'}`,
           `Workspace root: ${getWorkspaceRoot()}`,
           'All file paths must stay inside this workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under this workspace root.',
           'Use tools when they are needed, and reply directly when the sub-task is complete.',
-        ].join('\n'),
+        ]
+          .filter(Boolean)
+          .join('\n'),
       },
     ];
 
@@ -677,6 +761,10 @@ export class SwarmExecutor {
     sharedHistory: Message[],
     outcome: SwarmExecutionOutcome,
   ) {
+    const selectedPersona = getComputerPersonaById(
+      input.config.specialistPersonaId,
+    );
+
     if (!outcome.success) {
       session.emitBlock({
         id: crypto.randomUUID(),
@@ -692,15 +780,25 @@ export class SwarmExecutor {
       hadWarnings: outcome.hadWarnings,
       createdPaths: uniqueStrings(outcome.createdPaths).map(getDisplayPath),
       warnings: getExecutionWarnings(outcome),
+      persona: selectedPersona
+        ? {
+            name: selectedPersona.name,
+            strengths: selectedPersona.strengths,
+          }
+        : undefined,
     };
 
     const summaryStream = input.config.llm.streamText({
       messages: [
         {
           role: 'system',
-          content: withSystemInstructions(
-            getComputerSummaryPrompt(),
-            input.config.systemInstructions,
+          content: withPersonaOverlay(
+            withSystemInstructions(
+              getComputerSummaryPrompt(),
+              input.config.systemInstructions,
+            ),
+            selectedPersona,
+            'summary',
           ),
         },
         {

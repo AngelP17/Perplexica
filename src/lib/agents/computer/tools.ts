@@ -8,6 +8,16 @@ import { ComputerTool, FileToolResult, PythonToolResult } from './types';
 const execFileAsync = promisify(execFile);
 
 const MAX_TEXT_OUTPUT_CHARS = 12_000;
+const GEOCODING_TIMEOUT_MS = 5_000;
+const LOCATION_TIMEZONE_ALIASES: Record<string, string> = {
+  maui: 'Pacific/Honolulu',
+  honolulu: 'Pacific/Honolulu',
+  hawaii: 'Pacific/Honolulu',
+  oahu: 'Pacific/Honolulu',
+  kauai: 'Pacific/Honolulu',
+  molokai: 'Pacific/Honolulu',
+  lanai: 'Pacific/Honolulu',
+};
 
 export const truncateText = (
   value: string,
@@ -79,6 +89,129 @@ const listFilesSchema = z.object({
 const executePythonSchema = z.object({
   code: z.string().min(1, 'Python code is required'),
 });
+
+const currentTimeSchema = z
+  .object({
+    location: z.string().trim().optional(),
+    timezone: z.string().trim().optional(),
+  })
+  .refine((value) => value.location || value.timezone, {
+    message: 'Provide either a location or a timezone',
+    path: ['location'],
+  });
+
+const isValidTimeZone = (timeZone: string) => {
+  try {
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+    }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const resolveTimeZoneFromLocation = async (location: string) => {
+  const normalizedLocation = location.trim().toLowerCase();
+  const aliasTimeZone = LOCATION_TIMEZONE_ALIASES[normalizedLocation];
+
+  if (aliasTimeZone) {
+    return {
+      label: location.trim(),
+      timeZone: aliasTimeZone,
+    };
+  }
+
+  const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+  url.searchParams.set('name', location.trim());
+  url.searchParams.set('count', '1');
+  url.searchParams.set('language', 'en');
+  url.searchParams.set('format', 'json');
+
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(GEOCODING_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to resolve location "${location}" (${response.status})`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    results?: Array<{
+      name?: string;
+      admin1?: string;
+      country?: string;
+      timezone?: string;
+    }>;
+  };
+
+  const match = data.results?.[0];
+
+  if (!match?.timezone) {
+    throw new Error(`Could not resolve a timezone for "${location}"`);
+  }
+
+  const label = [match.name, match.admin1, match.country]
+    .filter(Boolean)
+    .join(', ');
+
+  return {
+    label: label || location.trim(),
+    timeZone: match.timezone,
+  };
+};
+
+const currentTimeTool: ComputerTool<typeof currentTimeSchema> = {
+  name: 'get_current_time',
+  description:
+    'Get the current local time for a location or IANA timezone. Required args: location or timezone. Examples: {"location":"Maui"} or {"timezone":"Pacific/Honolulu"}.',
+  schema: currentTimeSchema,
+  execute: async (params) => {
+    try {
+      const resolved = params.timezone?.trim()
+        ? {
+            label: params.location?.trim() || params.timezone.trim(),
+            timeZone: params.timezone.trim(),
+          }
+        : await resolveTimeZoneFromLocation(params.location!.trim());
+
+      if (!isValidTimeZone(resolved.timeZone)) {
+        throw new Error(`Invalid timezone "${resolved.timeZone}"`);
+      }
+
+      const now = new Date();
+      const localTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: resolved.timeZone,
+        weekday: 'short',
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZoneName: 'short',
+      }).format(now);
+
+      return {
+        success: true,
+        data: {
+          location: resolved.label,
+          timezone: resolved.timeZone,
+          localTime,
+          unixMs: now.getTime(),
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  },
+};
 
 const readFileTool: ComputerTool<typeof readFileSchema> = {
   name: 'read_file',
@@ -162,6 +295,10 @@ export const fileTools = {
   read_file: readFileTool,
   write_file: writeFileTool,
   list_files: listFilesTool,
+};
+
+export const utilityTools = {
+  get_current_time: currentTimeTool,
 };
 
 export const pythonTool: ComputerTool<typeof executePythonSchema> = {
