@@ -10,7 +10,7 @@ export type SearchAgentConfig = {
   sources: SearchSources[];
   fileIds: string[];
   llm: BaseLLM<any>;
-  embedding: BaseEmbedding<any>;
+  embedding?: BaseEmbedding<any>;
   mode: 'speed' | 'balanced' | 'quality';
   systemInstructions: string;
 };
@@ -64,7 +64,7 @@ export type ClassifierOutput = {
 
 export type AdditionalConfig = {
   llm: BaseLLM<any>;
-  embedding: BaseEmbedding<any>;
+  embedding?: BaseEmbedding<any>;
   session: SessionManager;
 };
 

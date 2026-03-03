@@ -10,7 +10,17 @@ export type ComputerAgentConfig = {
   swarmEnabled: boolean;
   systemInstructions: string;
   specialistPersonaId?: ComputerPersonaId;
+  providerId?: string;
+  chatModelKey?: string;
+  preferredCoderModelKey?: string;
   resolveChatModel?: (modelKey: string) => Promise<BaseLLM<any>>;
+  resolveVisionModel?: () => Promise<
+    | {
+        llm: BaseLLM<any>;
+        modelKey: string;
+      }
+    | null
+  >;
 };
 
 export type ComputerAgentInput = {
@@ -39,7 +49,8 @@ export type ComputerSkillName =
   | 'operator'
   | 'coder'
   | 'researcher'
-  | 'browser';
+  | 'browser'
+  | 'vision';
 
 export type SwarmPlanAgent = {
   role: ComputerSkillName;
@@ -59,6 +70,7 @@ export type SwarmAgentExecutionOutcome = {
   hadToolErrors: boolean;
   createdPaths: string[];
   errors: string[];
+  successfulTools: string[];
 };
 
 export type SwarmExecutionOutcome = {

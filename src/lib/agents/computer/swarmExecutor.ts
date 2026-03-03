@@ -36,7 +36,7 @@ import {
   type ComputerPersona,
 } from './personas';
 
-const executionRoleSchema = z.enum(['coder', 'researcher', 'browser']);
+const executionRoleSchema = z.enum(['coder', 'researcher', 'browser', 'vision']);
 
 const swarmPlanSchema = z.object({
   plan: z.string().min(1).max(800),
@@ -254,19 +254,37 @@ const uniqueStrings = (values: string[]) => {
   return Array.from(new Set(values.filter(Boolean)));
 };
 
+const getLikelyImageArtifacts = (paths: string[]) => {
+  return uniqueStrings(
+    paths.filter((filePath) => /\.(png|jpe?g|webp|gif)$/i.test(filePath)),
+  );
+};
+
+const requiresSuccessfulVisionAnalysis = (role: ComputerSkillName) => {
+  return role === 'vision';
+};
+
 const getCreatedPathsFromToolResult = (
   toolName: string,
   result: ComputerToolResult,
 ) => {
-  if (
-    (toolName !== 'write_file' && toolName !== 'browser_screenshot') ||
-    typeof result.path !== 'string' ||
-    !result.path.trim()
-  ) {
+  if (toolName !== 'write_file' && toolName !== 'browser_screenshot') {
     return [];
   }
 
-  return [result.path];
+  const directPath =
+    typeof result.path === 'string' && result.path.trim() ? result.path : null;
+  const nestedPath =
+    toolName === 'browser_screenshot' &&
+    typeof result.data === 'object' &&
+    result.data !== null &&
+    'path' in result.data &&
+    typeof result.data.path === 'string' &&
+    result.data.path.trim()
+      ? result.data.path
+      : null;
+
+  return uniqueStrings([directPath, nestedPath].filter(Boolean) as string[]);
 };
 
 const getExecutionWarnings = (outcome: SwarmExecutionOutcome) => {
@@ -528,16 +546,20 @@ export class SwarmExecutor {
     input: ComputerAgentInput,
   ): Promise<BaseLLM<any>> {
     const skill = skillRegistry[skillName];
+    const preferredModelKey =
+      skillName === 'coder'
+        ? input.config.preferredCoderModelKey || skill?.model
+        : skill?.model;
 
-    if (!skill?.model || !input.config.resolveChatModel) {
+    if (!preferredModelKey || !input.config.resolveChatModel) {
       return input.config.llm;
     }
 
     try {
-      return await input.config.resolveChatModel(skill.model);
+      return await input.config.resolveChatModel(preferredModelKey);
     } catch (error) {
       console.warn(
-        `[ComputerAgent] Falling back to the selected chat model for "${skillName}" because "${skill.model}" could not be loaded.`,
+        `[ComputerAgent] Falling back to the selected chat model for "${skillName}" because "${preferredModelKey}" could not be loaded.`,
         error,
       );
       return input.config.llm;
@@ -547,12 +569,13 @@ export class SwarmExecutor {
   private static async executeToolCall(
     toolCall: ToolCall,
     agent: SwarmPlanAgent,
+    input: ComputerAgentInput,
     session: SessionManager,
     blockId: string,
     sharedHistory: Message[],
     agentMessages: Message[],
   ): Promise<ComputerToolResult> {
-    const tools = getSkillTools(agent.role);
+    const tools = getSkillTools(agent.role, input.config);
     const tool = tools.find((candidate) => candidate.name === toolCall.name);
 
     const actionId = appendActionStep(session, blockId, {
@@ -616,6 +639,7 @@ export class SwarmExecutor {
     session: SessionManager,
     blockId: string,
     sharedHistory: Message[],
+    priorCreatedPaths: string[] = [],
   ): Promise<SwarmAgentExecutionOutcome> {
     const outcome: SwarmAgentExecutionOutcome = {
       role: agent.role,
@@ -624,6 +648,7 @@ export class SwarmExecutor {
       hadToolErrors: false,
       createdPaths: [],
       errors: [],
+      successfulTools: [],
     };
     const skill = skillRegistry[agent.role];
     const selectedPersona = getComputerPersonaById(
@@ -644,7 +669,8 @@ export class SwarmExecutor {
     }
 
     const llm = await this.resolveLLMForSkill(agent.role, input);
-    const tools = getSkillTools(agent.role);
+    const tools = getSkillTools(agent.role, input.config);
+    const likelyImageArtifacts = getLikelyImageArtifacts(priorCreatedPaths);
     const agentMessages: Message[] = [
       {
         role: 'system',
@@ -672,7 +698,13 @@ export class SwarmExecutor {
             : null,
           `Available tools: ${tools.map((tool) => tool.name).join(', ') || 'none'}`,
           `Workspace root: ${getWorkspaceRoot()}`,
+          agent.role === 'vision' && likelyImageArtifacts.length > 0
+            ? `Relevant image artifacts from earlier steps: ${likelyImageArtifacts.map(getDisplayPath).join(', ')}`
+            : null,
           'All file paths must stay inside this workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under this workspace root.',
+          agent.role === 'vision' && likelyImageArtifacts.length > 0
+            ? 'For this task, call analyze_image on one of the listed image artifacts before writing your conclusion.'
+            : null,
           'Use tools when they are needed, and reply directly when the sub-task is complete.',
         ]
           .filter(Boolean)
@@ -703,6 +735,21 @@ export class SwarmExecutor {
       sharedHistory.push(assistantMessage);
 
       if (response.toolCalls.length === 0) {
+        if (
+          requiresSuccessfulVisionAnalysis(agent.role) &&
+          !outcome.successfulTools.includes('analyze_image')
+        ) {
+          const error =
+            '[vision] A vision agent must successfully call analyze_image before it can finish.';
+          outcome.errors.push(error);
+          appendObservationStep(session, blockId, {
+            type: 'observation',
+            observation: error,
+            success: false,
+          });
+          continue;
+        }
+
         if (response.content.trim()) {
           appendObservationStep(session, blockId, {
             type: 'observation',
@@ -719,6 +766,7 @@ export class SwarmExecutor {
         const result = await this.executeToolCall(
           toolCall,
           agent,
+          input,
           session,
           blockId,
           sharedHistory,
@@ -730,6 +778,8 @@ export class SwarmExecutor {
           outcome.errors.push(
             `[${agent.role}] ${toolCall.name}: ${result.error || 'Tool execution failed.'}`,
           );
+        } else {
+          outcome.successfulTools?.push(toolCall.name);
         }
 
         outcome.createdPaths.push(
@@ -751,6 +801,7 @@ export class SwarmExecutor {
     }
 
     outcome.createdPaths = uniqueStrings(outcome.createdPaths);
+    outcome.successfulTools = uniqueStrings(outcome.successfulTools ?? []);
 
     return outcome;
   }
@@ -873,11 +924,20 @@ export class SwarmExecutor {
   ): Promise<SwarmExecutionOutcome> {
     const sharedHistory: Message[] = [];
     const agentOutcomes: SwarmAgentExecutionOutcome[] = [];
+    const cumulativeCreatedPaths: string[] = [];
 
     for (const agent of plan.agents) {
-      agentOutcomes.push(
-        await this.executeSubAgent(agent, input, session, blockId, sharedHistory),
+      const agentOutcome = await this.executeSubAgent(
+        agent,
+        input,
+        session,
+        blockId,
+        sharedHistory,
+        cumulativeCreatedPaths,
       );
+
+      agentOutcomes.push(agentOutcome);
+      cumulativeCreatedPaths.push(...agentOutcome.createdPaths);
     }
 
     const outcome: SwarmExecutionOutcome = {

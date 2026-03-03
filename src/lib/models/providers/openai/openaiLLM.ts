@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import OpenAI from 'openai';
 import BaseLLM from '../../base/llm';
 import { zodTextFormat, zodResponseFormat } from 'openai/helpers/zod';
@@ -6,6 +7,7 @@ import {
   GenerateOptions,
   GenerateTextInput,
   GenerateTextOutput,
+  GenerateVisionTextInput,
   StreamTextOutput,
   ToolCall,
 } from '../../types';
@@ -14,11 +16,14 @@ import z from 'zod';
 import {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
+  ChatCompletionSystemMessageParam,
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
+  ChatCompletionUserMessageParam,
 } from 'openai/resources/index.mjs';
 import { Message } from '@/lib/types';
 import { repairJson } from '@toolsycc/json-repair';
+import { getImageMimeType, isVisionModelKey } from '../../vision';
 
 type OpenAIConfig = {
   apiKey: string;
@@ -67,6 +72,64 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
 
       return msg;
     });
+  }
+
+  supportsVision() {
+    return isVisionModelKey(this.config.model);
+  }
+
+  private async convertVisionMessages(
+    messages: GenerateVisionTextInput['messages'],
+  ): Promise<ChatCompletionMessageParam[]> {
+    return Promise.all(
+      messages.map(async (message) => {
+        const content = await Promise.all(
+          message.content.map(async (part) => {
+            if (part.type === 'text') {
+              return {
+                type: 'text' as const,
+                text: part.text,
+              };
+            }
+
+            const mimeType = part.mimeType || getImageMimeType(part.imagePath);
+            const encodedImage = await fs.readFile(part.imagePath, 'base64');
+
+            return {
+              type: 'image_url' as const,
+              image_url: {
+                url: `data:${mimeType};base64,${encodedImage}`,
+              },
+            };
+          }),
+        );
+
+        if (message.role === 'system') {
+          return {
+            role: 'system',
+            content: content
+              .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+              .map((part) => part.text)
+              .join('\n\n'),
+          } as ChatCompletionSystemMessageParam;
+        }
+
+        if (message.role === 'assistant') {
+          return {
+            role: 'assistant',
+            content: content
+              .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+              .map((part) => part.text)
+              .join('\n\n'),
+          } as ChatCompletionAssistantMessageParam;
+        }
+
+        return {
+          role: 'user',
+          content,
+        } as ChatCompletionUserMessageParam;
+      }),
+    );
   }
 
   async generateText(input: GenerateTextInput): Promise<GenerateTextOutput> {
@@ -192,6 +255,42 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
         };
       }
     }
+  }
+
+  async generateVisionText(
+    input: GenerateVisionTextInput,
+  ): Promise<GenerateTextOutput> {
+    if (!this.supportsVision()) {
+      throw new Error(`Model "${this.config.model}" does not support vision`);
+    }
+
+    const response = await this.openAIClient.chat.completions.create({
+      model: this.config.model,
+      messages: await this.convertVisionMessages(input.messages),
+      temperature:
+        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
+      top_p: input.options?.topP ?? this.config.options?.topP,
+      max_completion_tokens:
+        input.options?.maxTokens ?? this.config.options?.maxTokens,
+      stop: input.options?.stopSequences ?? this.config.options?.stopSequences,
+      frequency_penalty:
+        input.options?.frequencyPenalty ??
+        this.config.options?.frequencyPenalty,
+      presence_penalty:
+        input.options?.presencePenalty ?? this.config.options?.presencePenalty,
+    });
+
+    if (response.choices && response.choices.length > 0) {
+      return {
+        content: response.choices[0].message.content || '',
+        toolCalls: [],
+        additionalInfo: {
+          finishReason: response.choices[0].finish_reason,
+        },
+      };
+    }
+
+    throw new Error('No response from OpenAI');
   }
 
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {

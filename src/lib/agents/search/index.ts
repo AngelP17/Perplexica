@@ -132,6 +132,15 @@ class SearchAgent {
             content: input.followUp,
           },
         ],
+        options: {
+          temperature: input.config.mode === 'speed' ? 0.2 : 0.4,
+          maxTokens:
+            input.config.mode === 'speed'
+              ? 220
+              : input.config.mode === 'balanced'
+                ? 900
+                : undefined,
+        },
       });
 
       let responseBlockId = '';

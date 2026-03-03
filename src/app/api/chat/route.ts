@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import ModelRegistry from '@/lib/models/registry';
+import { loadRoutedChatModel } from '@/lib/models/routing';
 import { ModelWithProvider } from '@/lib/models/types';
 import SearchAgent from '@/lib/agents/search';
 import SessionManager from '@/lib/session';
@@ -127,13 +128,18 @@ export const POST = async (req: Request) => {
 
     const registry = new ModelRegistry();
 
-    const [llm, embedding] = await Promise.all([
-      registry.loadChatModel(body.chatModel.providerId, body.chatModel.key),
-      registry.loadEmbeddingModel(
-        body.embeddingModel.providerId,
-        body.embeddingModel.key,
-      ),
+    const shouldLoadEmbedding = body.files.length > 0;
+
+    const [chatSelection, embedding] = await Promise.all([
+      loadRoutedChatModel(registry, body.chatModel, body.optimizationMode),
+      shouldLoadEmbedding
+        ? registry.loadEmbeddingModel(
+            body.embeddingModel.providerId,
+            body.embeddingModel.key,
+          )
+        : Promise.resolve(undefined),
     ]);
+    const llm = chatSelection.llm;
 
     const history: ChatTurnMessage[] = body.history.map((msg) => {
       if (msg[0] === 'human') {

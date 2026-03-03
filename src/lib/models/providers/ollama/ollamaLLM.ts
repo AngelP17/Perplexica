@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import z from 'zod';
 import BaseLLM from '../../base/llm';
 import {
@@ -5,6 +6,7 @@ import {
   GenerateOptions,
   GenerateTextInput,
   GenerateTextOutput,
+  GenerateVisionTextInput,
   StreamTextOutput,
 } from '../../types';
 import { Ollama, Tool as OllamaTool, Message as OllamaMessage } from 'ollama';
@@ -12,6 +14,7 @@ import { parse } from 'partial-json';
 import crypto from 'crypto';
 import { Message } from '@/lib/types';
 import { repairJson } from '@toolsycc/json-repair';
+import { isVisionModelKey } from '../../vision';
 
 type OllamaConfig = {
   baseURL: string;
@@ -64,6 +67,36 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
 
       return msg;
     });
+  }
+
+  supportsVision() {
+    return isVisionModelKey(this.config.model);
+  }
+
+  private async convertVisionMessages(
+    messages: GenerateVisionTextInput['messages'],
+  ): Promise<OllamaMessage[]> {
+    return Promise.all(
+      messages.map(async (message) => {
+        const textParts = message.content
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text.trim())
+          .filter(Boolean);
+        const imageParts = message.content.filter((part) => part.type === 'image');
+
+        return {
+          role: message.role,
+          content: textParts.join('\n\n'),
+          ...(imageParts.length > 0
+            ? {
+                images: await Promise.all(
+                  imageParts.map((part) => fs.readFile(part.imagePath, 'base64')),
+                ),
+              }
+            : {}),
+        } as OllamaMessage;
+      }),
+    );
   }
 
   async generateText(input: GenerateTextInput): Promise<GenerateTextOutput> {
@@ -179,6 +212,44 @@ class OllamaLLM extends BaseLLM<OllamaConfig> {
         },
       };
     }
+  }
+
+  async generateVisionText(
+    input: GenerateVisionTextInput,
+  ): Promise<GenerateTextOutput> {
+    if (!this.supportsVision()) {
+      throw new Error(`Model "${this.config.model}" does not support vision`);
+    }
+
+    const res = await this.ollamaClient.chat({
+      model: this.config.model,
+      messages: await this.convertVisionMessages(input.messages),
+      ...(reasoningModels.find((m) => this.config.model.includes(m))
+        ? { think: false }
+        : {}),
+      options: {
+        top_p: input.options?.topP ?? this.config.options?.topP,
+        temperature:
+          input.options?.temperature ?? this.config.options?.temperature ?? 0.7,
+        num_predict: input.options?.maxTokens ?? this.config.options?.maxTokens,
+        num_ctx: 32000,
+        frequency_penalty:
+          input.options?.frequencyPenalty ??
+          this.config.options?.frequencyPenalty,
+        presence_penalty:
+          input.options?.presencePenalty ?? this.config.options?.presencePenalty,
+        stop:
+          input.options?.stopSequences ?? this.config.options?.stopSequences,
+      },
+    });
+
+    return {
+      content: res.message.content,
+      toolCalls: [],
+      additionalInfo: {
+        reasoning: res.message.thinking,
+      },
+    };
   }
 
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {

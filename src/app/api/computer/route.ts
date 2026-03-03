@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import ModelRegistry from '@/lib/models/registry';
+import {
+  getPreferredCoderModelKey,
+  getPreferredVisionModelKey,
+  loadRoutedChatModel,
+} from '@/lib/models/routing';
 import { ModelWithProvider } from '@/lib/models/types';
 import ComputerAgent from '@/lib/agents/computer';
 import { isComputerPersonaId } from '@/lib/agents/computer/personas/catalog';
@@ -114,10 +119,14 @@ export const POST = async (req: Request) => {
     const { message } = body;
 
     const registry = new ModelRegistry();
-    const llm = await registry.loadChatModel(
-      body.chatModel.providerId,
-      body.chatModel.key,
+    const chatSelection = await loadRoutedChatModel(
+      registry,
+      body.chatModel,
+      body.optimizationMode,
     );
+    const llm = chatSelection.llm;
+    const preferredCoderModelKey = getPreferredCoderModelKey();
+    const preferredVisionModelKey = getPreferredVisionModelKey();
 
     const history: ChatTurnMessage[] = body.history.map((entry) =>
       entry[0] === 'human'
@@ -194,10 +203,65 @@ export const POST = async (req: Request) => {
         mode: body.optimizationMode,
         swarmEnabled: body.swarmEnabled,
         systemInstructions: body.systemInstructions || '',
+        providerId: body.chatModel.providerId,
+        chatModelKey: chatSelection.modelKey,
+        preferredCoderModelKey,
         specialistPersonaId:
           body.specialistPersonaId as ComputerPersonaId | undefined,
         resolveChatModel: async (modelKey: string) =>
           registry.loadChatModel(body.chatModel.providerId, modelKey),
+        resolveVisionModel: async () => {
+          if (llm.supportsVision()) {
+            return {
+              llm,
+              modelKey: chatSelection.modelKey,
+            };
+          }
+
+          if (!preferredVisionModelKey) {
+            return null;
+          }
+
+          const activeProviders = await registry.getActiveProviders();
+          const prioritizedProviders = [
+            ...activeProviders.filter(
+              (candidate) => candidate.id === body.chatModel.providerId,
+            ),
+            ...activeProviders.filter(
+              (candidate) => candidate.id !== body.chatModel.providerId,
+            ),
+          ];
+
+          for (const provider of prioritizedProviders) {
+            const visionCandidate = provider.chatModels.find(
+              (model) => model.key === preferredVisionModelKey,
+            );
+
+            if (!visionCandidate) {
+              continue;
+            }
+
+            const visionLLM = await registry.loadChatModel(
+              provider.id,
+              visionCandidate.key,
+            );
+
+            if (!visionLLM.supportsVision()) {
+              continue;
+            }
+
+            return {
+              llm: visionLLM,
+              modelKey: visionCandidate.key,
+            };
+          }
+
+          console.warn(
+            `[ComputerAgent] Preferred vision model "${preferredVisionModelKey}" is not available from the configured providers.`,
+          );
+
+          return null;
+        },
       },
     });
 

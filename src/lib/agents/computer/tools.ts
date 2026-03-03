@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import z from 'zod';
 import { ComputerTool, FileToolResult, PythonToolResult } from './types';
+import { getImageMimeType } from '@/lib/models/vision';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +35,7 @@ export const getWorkspaceBase = () => {
   return process.env.COMPUTER_WORKSPACE_DIR?.trim() || process.cwd();
 };
 
-const resolveWorkspacePath = (targetPath: string = '.') => {
+export const resolveWorkspacePath = (targetPath: string = '.') => {
   const workspaceBase = path.resolve(getWorkspaceBase());
   const resolvedPath = path.resolve(workspaceBase, targetPath);
 
@@ -213,6 +214,11 @@ const currentTimeTool: ComputerTool<typeof currentTimeSchema> = {
   },
 };
 
+const analyzeImageSchema = z.object({
+  imagePath: z.string().min(1, 'Image path is required'),
+  question: z.string().min(1, 'Question is required').optional(),
+});
+
 const readFileTool: ComputerTool<typeof readFileSchema> = {
   name: 'read_file',
   description:
@@ -300,6 +306,101 @@ export const fileTools = {
 export const utilityTools = {
   get_current_time: currentTimeTool,
 };
+
+export const createAnalyzeImageTool = (
+  resolveVisionModel?: () => Promise<
+    | {
+        llm: {
+          generateVisionText: (input: {
+            messages: Array<{
+              role: 'system' | 'user' | 'assistant';
+              content: Array<
+                | { type: 'text'; text: string }
+                | { type: 'image'; imagePath: string; mimeType?: string }
+              >;
+            }>;
+            options?: {
+              temperature?: number;
+              maxTokens?: number;
+            };
+          }) => Promise<{ content: string }>;
+        };
+        modelKey: string;
+      }
+    | null
+  >,
+): ComputerTool<typeof analyzeImageSchema> => ({
+  name: 'analyze_image',
+  description:
+    'Inspect an image or screenshot with a multimodal model. Required args: imagePath, question.',
+  schema: analyzeImageSchema,
+  execute: async (params) => {
+    try {
+      if (!resolveVisionModel) {
+        throw new Error(
+          'No vision-model resolver is configured for computer mode.',
+        );
+      }
+
+      const resolvedPath = resolveWorkspacePath(params.imagePath);
+      await fs.access(resolvedPath);
+
+      const visionModel = await resolveVisionModel();
+
+      if (!visionModel) {
+        throw new Error(
+          'No vision-capable model is configured. Select a multimodal chat model or add one such as llava, qwen2.5-vl, or gpt-4o.',
+        );
+      }
+
+      const response = await visionModel.llm.generateVisionText({
+        messages: [
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'text',
+                text: 'You are a precise visual analyst. Answer only from what is visible in the provided image and call out uncertainty when something is unclear.',
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text:
+                  params.question?.trim() ||
+                  'Describe the important visible details in this image, including page title, primary content, and any relevant links or UI state.',
+              },
+              {
+                type: 'image',
+                imagePath: resolvedPath,
+                mimeType: getImageMimeType(resolvedPath),
+              },
+            ],
+          },
+        ],
+        options: {
+          temperature: 0.1,
+          maxTokens: 700,
+        },
+      });
+
+      return {
+        success: true,
+        path: resolvedPath,
+        model: visionModel.modelKey,
+        content: truncateText(response.content.trim(), 4_000),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
+  },
+});
 
 export const pythonTool: ComputerTool<typeof executePythonSchema> = {
   name: 'execute_python',

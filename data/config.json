@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "setupComplete": true,
+  "preferences": {
+    "modelRouting": {
+      "speedChatModelKey": "qwen3:0.6b",
+      "balancedChatModelKey": "qwen3:0.6b",
+      "qualityChatModelKey": "qwen3:4b",
+      "computerCoderModelKey": "qwen3:0.6b"
+    }
+  },
+  "personalization": {},
+  "modelProviders": [
+    {
+      "id": "7e7396ea-3bc3-4d3f-aaa6-159c4ab38208",
+      "name": "Transformers",
+      "type": "transformers",
+      "chatModels": [],
+      "embeddingModels": [],
+      "config": {},
+      "hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "id": "c8e0c4e7-5cdd-4ceb-882c-b8f1f0f685fb",
+      "name": "Ollama",
+      "type": "ollama",
+      "chatModels": [],
+      "embeddingModels": [],
+      "config": {
+        "baseURL": "http://localhost:11434"
+      },
+      "hash": "d0cbe7f5ae6a9270120e31e589de2fd33fda94d1a337c249aa34531c403fa7ff"
+    }
+  ],
+  "search": {
+    "searxngURL": "http://localhost:8081"
+  }
+}

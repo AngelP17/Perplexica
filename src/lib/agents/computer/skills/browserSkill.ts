@@ -112,7 +112,21 @@ const typeSchema = z.object({
 });
 
 const screenshotSchema = z.object({
-  fullPage: z.boolean().optional(),
+  fullPage: z.preprocess((value) => {
+    if (value === undefined || value === null || value === '' || value === '.') {
+      return undefined;
+    }
+
+    if (value === 'true') {
+      return true;
+    }
+
+    if (value === 'false') {
+      return false;
+    }
+
+    return value;
+  }, z.boolean().optional()),
 });
 
 const scrapeSchema = z.object({
@@ -219,7 +233,7 @@ const browserTypeTool: ComputerTool<typeof typeSchema> = {
 const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
   name: 'browser_screenshot',
   description:
-    'Save a PNG screenshot of the current browser page into the workspace and return its path. Optional args: fullPage.',
+    'Save a PNG screenshot of the current browser page into the workspace and return its path. Optional args: fullPage. Use {} for a normal screenshot or {"fullPage": true} for a full-page screenshot.',
   schema: screenshotSchema,
   execute: async (params): Promise<BrowserToolResult> => {
     try {
@@ -238,6 +252,7 @@ const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
 
       return {
         success: true,
+        path: filePath,
         data: {
           path: filePath,
           bytes: stats.size,
@@ -256,7 +271,7 @@ const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
 const browserScrapeTool: ComputerTool<typeof scrapeSchema> = {
   name: 'browser_scrape',
   description:
-    'Extract text content or a specific attribute from the current browser page. Optional args: selector, attribute.',
+    'Extract text content or a specific attribute from the current browser page. Optional args: selector, attribute. Use {"attribute":"text"} or omit attribute to get text content.',
   schema: scrapeSchema,
   execute: async (params): Promise<BrowserToolResult> => {
     try {
@@ -270,6 +285,23 @@ const browserScrapeTool: ComputerTool<typeof scrapeSchema> = {
       }
 
       if (params.attribute) {
+        if (
+          params.attribute === 'text' ||
+          params.attribute === 'textContent' ||
+          params.attribute === 'innerText'
+        ) {
+          const value = await locator.first().textContent();
+
+          return {
+            success: true,
+            data: {
+              selector,
+              attribute: params.attribute,
+              content: truncateText(value || '', 4_000),
+            },
+          };
+        }
+
         const value = await locator.first().getAttribute(params.attribute);
 
         return {

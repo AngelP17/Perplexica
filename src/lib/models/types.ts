@@ -68,6 +68,29 @@ type StreamTextOutput = {
   done?: boolean;
 };
 
+type VisionTextPart = {
+  type: 'text';
+  text: string;
+};
+
+type VisionImagePart = {
+  type: 'image';
+  imagePath: string;
+  mimeType?: string;
+};
+
+type VisionContentPart = VisionTextPart | VisionImagePart;
+
+type VisionMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: VisionContentPart[];
+};
+
+type GenerateVisionTextInput = {
+  messages: VisionMessage[];
+  options?: GenerateOptions;
+};
+
 type GenerateObjectInput = {
   schema: z.ZodTypeAny;
   messages: Message[];
@@ -95,6 +118,11 @@ export type {
   GenerateTextInput,
   GenerateTextOutput,
   StreamTextOutput,
+  VisionTextPart,
+  VisionImagePart,
+  VisionContentPart,
+  VisionMessage,
+  GenerateVisionTextInput,
   GenerateObjectInput,
   GenerateObjectOutput,
   StreamObjectOutput,
