@@ -7,6 +7,10 @@ import formatChatHistoryAsString from '@/lib/utils/formatHistory';
 import { ToolCall } from '@/lib/models/types';
 import { getQueryCache } from '@/lib/cache/semanticCache';
 import { postProcessSearchResults } from '../postprocess';
+import { truncateToTokenBudget } from '@/lib/utils/tokenCount';
+
+const compactToolPayload = (value: unknown, maxTokens = 500) =>
+  truncateToTokenBudget(JSON.stringify(value), maxTokens);
 
 class Researcher {
   async research(
@@ -232,7 +236,7 @@ class Researcher {
           role: 'tool',
           id: finalToolCalls[i].id,
           name: finalToolCalls[i].name,
-          content: JSON.stringify(action),
+          content: compactToolPayload(action),
         });
       });
     }

@@ -490,6 +490,38 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           method: 'POST',
         });
 
+        const contentType = res.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          let errorMessage =
+            'The previous response could not be resumed. Please retry it.';
+          let expired = false;
+
+          try {
+            const data = await res.json();
+            if (typeof data.message === 'string' && data.message.trim()) {
+              errorMessage = data.message;
+            }
+            expired = Boolean(data.expired);
+          } catch {}
+
+          if (!expired) {
+            toast.error(errorMessage);
+          }
+
+          setLoading(false);
+          setResearchEnded(true);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.messageId === lastMsg.messageId
+                ? { ...msg, status: 'error' as const }
+                : msg,
+            ),
+          );
+          isReconnectingRef.current = false;
+          return;
+        }
+
         if (!res.ok) {
           let errorMessage =
             'The previous response could not be resumed. Please retry it.';

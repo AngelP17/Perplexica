@@ -489,7 +489,7 @@ export const createAnalyzeImageTool = (
 export const pythonTool: ComputerTool<typeof executePythonSchema> = {
   name: 'execute_python',
   description:
-    'Execute Python 3 code inside the workspace and capture stdout and stderr. Required args: code.',
+    'Execute sandboxed Python 3 code inside the workspace and capture stdout and stderr. Required args: code. This tool is for pure local Python only and blocks subprocess, os.system, git, pip, and outbound network access unless the sandbox explicitly allows it.',
   schema: executePythonSchema,
   execute: async (params, context): Promise<PythonToolResult> => {
     const workspaceBase = path.resolve(getWorkspaceBase(context));

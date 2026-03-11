@@ -27,10 +27,11 @@ export const POST = async (
 
       return Response.json(
         {
+          expired: true,
           message:
             'Session expired or stalled. The previous response can no longer continue. Retry the message to run it again.',
         },
-        { status: 410 },
+        { status: 200 },
       );
     }
 

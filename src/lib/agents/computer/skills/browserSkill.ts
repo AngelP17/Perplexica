@@ -268,7 +268,7 @@ const browserTypeTool: ComputerTool<typeof typeSchema> = {
 const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
   name: 'browser_screenshot',
   description:
-    'Save a PNG screenshot of the current browser page into the workspace and return its path. Optional args: fullPage. Use {} for a normal screenshot or {"fullPage": true} for a full-page screenshot.',
+    'Save a compressed screenshot of the current browser page into the workspace and return its path. Optional args: fullPage. Use {} for a normal screenshot or {"fullPage": true} for a full-page screenshot.',
   schema: screenshotSchema,
   execute: async (params, context): Promise<BrowserToolResult> => {
     try {
@@ -276,14 +276,16 @@ const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
       const page = await BrowserManager.getInstance(context).getPage(context);
       const filePath = path.join(
         context.sandbox.artifactsDir,
-        `screenshot_${Date.now()}.png`,
+        params.fullPage ? 'screenshot_full.jpg' : 'screenshot_viewport.jpg',
       );
 
       await fs.mkdir(context.sandbox.artifactsDir, { recursive: true });
       await page.screenshot({
         path: filePath,
         fullPage: params.fullPage || false,
-        type: 'png',
+        type: 'jpeg',
+        quality: params.fullPage ? 45 : 55,
+        scale: 'css',
       });
 
       const stats = await fs.stat(filePath);
@@ -316,12 +318,34 @@ const browserScrapeTool: ComputerTool<typeof scrapeSchema> = {
     try {
       context.sandbox.recordBrowserAction();
       const page = await BrowserManager.getInstance(context).getPage(context);
-      const selector = params.selector || 'body';
-      const locator = page.locator(selector);
-      const count = await locator.count();
+      const requestedSelector = params.selector || 'body';
+      const fallbackSelectors =
+        requestedSelector === 'body'
+          ? ['body']
+          : [requestedSelector, 'article', 'main', '[role="main"]', 'body'];
+
+      let selector = requestedSelector;
+      let locator = page.locator(selector);
+      let count = await locator.count();
 
       if (count === 0) {
-        throw new Error(`No elements found for selector "${selector}"`);
+        for (const candidate of fallbackSelectors.slice(1)) {
+          const candidateLocator = page.locator(candidate);
+          const candidateCount = await candidateLocator.count();
+
+          if (candidateCount > 0) {
+            selector = candidate;
+            locator = candidateLocator;
+            count = candidateCount;
+            break;
+          }
+        }
+      }
+
+      if (count === 0) {
+        throw new Error(
+          `No elements found for selector "${requestedSelector}" or common content fallbacks.`,
+        );
       }
 
       if (params.attribute) {
@@ -330,14 +354,20 @@ const browserScrapeTool: ComputerTool<typeof scrapeSchema> = {
           params.attribute === 'textContent' ||
           params.attribute === 'innerText'
         ) {
-          const value = await locator.first().textContent();
+          const values = await Promise.all(
+            Array.from({ length: Math.min(count, 12) }).map((_, index) =>
+              locator.nth(index).textContent(),
+            ),
+          );
 
           return {
             success: true,
             data: {
               selector,
+              requestedSelector,
+              count,
               attribute: params.attribute,
-              content: truncateText(value || '', 4_000),
+              content: truncateText(values.filter(Boolean).join('\n\n'), 6_000),
             },
           };
         }

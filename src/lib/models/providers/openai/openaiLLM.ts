@@ -15,6 +15,8 @@ import { parse } from 'partial-json';
 import z from 'zod';
 import {
   ChatCompletionAssistantMessageParam,
+  ChatCompletion,
+  ChatCompletionChunk,
   ChatCompletionMessageParam,
   ChatCompletionSystemMessageParam,
   ChatCompletionTool,
@@ -24,6 +26,8 @@ import {
 import { Message } from '@/lib/types';
 import { repairJson } from '@toolsycc/json-repair';
 import { getImageMimeType, isVisionModelKey } from '../../vision';
+import { getTokenCount, truncateToTokenBudget } from '@/lib/utils/tokenCount';
+import { Stream } from 'openai/streaming';
 
 type OpenAIConfig = {
   apiKey: string;
@@ -76,6 +80,145 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
 
   supportsVision() {
     return isVisionModelKey(this.config.model);
+  }
+
+  private compactMessageContent(
+    message: Message,
+    aggressive: boolean,
+  ): Message {
+    const roleBudget = aggressive
+      ? {
+          system: 700,
+          user: 900,
+          assistant: 500,
+          tool: 350,
+        }
+      : {
+          system: 1200,
+          user: 1800,
+          assistant: 900,
+          tool: 600,
+        };
+
+    const budget = roleBudget[message.role];
+    const compactContent = truncateToTokenBudget(message.content, budget);
+
+    return {
+      ...message,
+      content: compactContent,
+    };
+  }
+
+  private compactMessages(messages: Message[], aggressive = false): Message[] {
+    const compacted = messages.map((message) =>
+      this.compactMessageContent(message, aggressive),
+    );
+    const totalBudget = aggressive ? 3200 : 5200;
+    let totalTokens = compacted.reduce(
+      (sum, message) => sum + getTokenCount(message.content),
+      0,
+    );
+
+    if (totalTokens <= totalBudget) {
+      return compacted;
+    }
+
+    const systemMessages = compacted.filter((message) => message.role === 'system');
+    const remaining = compacted.filter((message) => message.role !== 'system');
+    const kept: Message[] = [];
+
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      const candidate = remaining[i];
+      const candidateTokens = getTokenCount(candidate.content);
+      const nextTotal =
+        systemMessages.reduce(
+          (sum, message) => sum + getTokenCount(message.content),
+          0,
+        ) +
+        kept.reduce((sum, message) => sum + getTokenCount(message.content), 0) +
+        candidateTokens;
+
+      if (nextTotal > totalBudget && kept.length > 0) {
+        continue;
+      }
+
+      kept.unshift(candidate);
+    }
+
+    return [...systemMessages, ...kept];
+  }
+
+  private async createChatCompletion(
+    input: GenerateTextInput,
+    openaiTools: ChatCompletionTool[],
+  ): Promise<ChatCompletion> {
+    const buildRequest = (messages: Message[]) => ({
+      model: this.config.model,
+      messages: this.convertToOpenAIMessages(messages),
+      tools: openaiTools.length > 0 ? openaiTools : undefined,
+      temperature:
+        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
+      top_p: input.options?.topP ?? this.config.options?.topP,
+      max_completion_tokens:
+        input.options?.maxTokens ?? this.config.options?.maxTokens,
+      stop: input.options?.stopSequences ?? this.config.options?.stopSequences,
+      frequency_penalty:
+        input.options?.frequencyPenalty ??
+        this.config.options?.frequencyPenalty,
+      presence_penalty:
+        input.options?.presencePenalty ?? this.config.options?.presencePenalty,
+    });
+
+    try {
+      return await this.openAIClient.chat.completions.create(
+        buildRequest(this.compactMessages(input.messages, false)),
+      );
+    } catch (error: any) {
+      if (error?.status !== 413) {
+        throw error;
+      }
+
+      return await this.openAIClient.chat.completions.create(
+        buildRequest(this.compactMessages(input.messages, true)),
+      );
+    }
+  }
+
+  private async createChatCompletionStream(
+    input: GenerateTextInput,
+    openaiTools: ChatCompletionTool[],
+  ): Promise<Stream<ChatCompletionChunk>> {
+    const buildRequest = (messages: Message[]) => ({
+      model: this.config.model,
+      messages: this.convertToOpenAIMessages(messages),
+      tools: openaiTools.length > 0 ? openaiTools : undefined,
+      temperature:
+        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
+      top_p: input.options?.topP ?? this.config.options?.topP,
+      max_completion_tokens:
+        input.options?.maxTokens ?? this.config.options?.maxTokens,
+      stop: input.options?.stopSequences ?? this.config.options?.stopSequences,
+      frequency_penalty:
+        input.options?.frequencyPenalty ??
+        this.config.options?.frequencyPenalty,
+      presence_penalty:
+        input.options?.presencePenalty ?? this.config.options?.presencePenalty,
+      stream: true as const,
+    });
+
+    try {
+      return await this.openAIClient.chat.completions.create(
+        buildRequest(this.compactMessages(input.messages, false)),
+      );
+    } catch (error: any) {
+      if (error?.status !== 413) {
+        throw error;
+      }
+
+      return await this.openAIClient.chat.completions.create(
+        buildRequest(this.compactMessages(input.messages, true)),
+      );
+    }
   }
 
   private async convertVisionMessages(
@@ -146,29 +289,14 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
       });
     });
 
-    const response = await this.openAIClient.chat.completions.create({
-      model: this.config.model,
-      tools: openaiTools.length > 0 ? openaiTools : undefined,
-      messages: this.convertToOpenAIMessages(input.messages),
-      temperature:
-        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
-      top_p: input.options?.topP ?? this.config.options?.topP,
-      max_completion_tokens:
-        input.options?.maxTokens ?? this.config.options?.maxTokens,
-      stop: input.options?.stopSequences ?? this.config.options?.stopSequences,
-      frequency_penalty:
-        input.options?.frequencyPenalty ??
-        this.config.options?.frequencyPenalty,
-      presence_penalty:
-        input.options?.presencePenalty ?? this.config.options?.presencePenalty,
-    });
+    const response = await this.createChatCompletion(input, openaiTools);
 
     if (response.choices && response.choices.length > 0) {
       return {
         content: response.choices[0].message.content!,
         toolCalls:
           response.choices[0].message.tool_calls
-            ?.map((tc) => {
+            ?.map((tc: any) => {
               if (tc.type === 'function') {
                 return {
                   name: tc.function.name,
@@ -177,7 +305,19 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
                 };
               }
             })
-            .filter((tc) => tc !== undefined) || [],
+            .filter(
+              (
+                tc: {
+                  name: string;
+                  id: string;
+                  arguments: Record<string, any>;
+                } | undefined,
+              ): tc is {
+                name: string;
+                id: string;
+                arguments: Record<string, any>;
+              } => tc !== undefined,
+            ) || [],
         additionalInfo: {
           finishReason: response.choices[0].finish_reason,
         },
@@ -203,23 +343,7 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
       });
     });
 
-    const stream = await this.openAIClient.chat.completions.create({
-      model: this.config.model,
-      messages: this.convertToOpenAIMessages(input.messages),
-      tools: openaiTools.length > 0 ? openaiTools : undefined,
-      temperature:
-        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
-      top_p: input.options?.topP ?? this.config.options?.topP,
-      max_completion_tokens:
-        input.options?.maxTokens ?? this.config.options?.maxTokens,
-      stop: input.options?.stopSequences ?? this.config.options?.stopSequences,
-      frequency_penalty:
-        input.options?.frequencyPenalty ??
-        this.config.options?.frequencyPenalty,
-      presence_penalty:
-        input.options?.presencePenalty ?? this.config.options?.presencePenalty,
-      stream: true,
-    });
+    const stream = await this.createChatCompletionStream(input, openaiTools);
 
     let recievedToolCalls: { name: string; id: string; arguments: string }[] =
       [];
@@ -230,7 +354,7 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
         yield {
           contentChunk: chunk.choices[0].delta.content || '',
           toolCallChunk:
-            toolCalls?.map((tc) => {
+            toolCalls?.map((tc: any) => {
               if (!recievedToolCalls[tc.index]) {
                 const call = {
                   name: tc.function?.name!,
@@ -247,7 +371,19 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
                   arguments: parse(existingCall.arguments),
                 };
               }
-            }) || [],
+            }).filter(
+              (
+                tc: {
+                  name: string;
+                  id: string;
+                  arguments: Record<string, any>;
+                } | undefined,
+              ): tc is {
+                name: string;
+                id: string;
+                arguments: Record<string, any>;
+              } => tc !== undefined,
+            ) || [],
           done: chunk.choices[0].finish_reason !== null,
           additionalInfo: {
             finishReason: chunk.choices[0].finish_reason,

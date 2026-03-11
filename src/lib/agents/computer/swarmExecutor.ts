@@ -36,6 +36,7 @@ import {
   toComputerPersonaSummary,
   type ComputerPersona,
 } from './personas';
+import { truncateToTokenBudget } from '@/lib/utils/tokenCount';
 
 const executionRoleSchema = z.enum([
   'coder',
@@ -157,6 +158,10 @@ const renderToolResult = (result: ComputerToolResult) => {
   return truncateText(JSON.stringify(result, null, 2), 4_000);
 };
 
+const renderToolMessageForLLM = (result: ComputerToolResult) => {
+  return truncateToTokenBudget(JSON.stringify(result), 350);
+};
+
 const getIterationLimit = (mode: ComputerAgentInput['config']['mode']) => {
   if (mode === 'speed') {
     return 3;
@@ -268,6 +273,37 @@ const getLikelyImageArtifacts = (paths: string[]) => {
 
 const requiresSuccessfulVisionAnalysis = (role: ComputerSkillName) => {
   return role === 'vision';
+};
+
+const inferImplicitCompletion = (
+  role: ComputerSkillName,
+  outcome: SwarmAgentExecutionOutcome,
+) => {
+  if (role === 'browser') {
+    if (
+      outcome.successfulTools.includes('browser_navigate') &&
+      outcome.successfulTools.includes('browser_scrape')
+    ) {
+      return '[browser] Marked complete from successful navigation and content extraction, even though the agent did not emit an explicit final message.';
+    }
+
+    return null;
+  }
+
+  if (role === 'coder') {
+    if (
+      outcome.createdPaths.length > 0 ||
+      (outcome.successfulTools.includes('write_file') &&
+        outcome.successfulTools.includes('list_files')) ||
+      outcome.successfulTools.includes('execute_python')
+    ) {
+      return '[coder] Marked complete from successful artifact creation or code execution, even though the agent did not emit an explicit final message.';
+    }
+
+    return null;
+  }
+
+  return null;
 };
 
 const getCreatedPathsFromToolResult = (
@@ -479,7 +515,16 @@ export class SwarmExecutor {
           // Try to repair malformed JSON
           try {
             const repairedJson = repairJson(jsonText) as string;
-            plan = swarmPlanSchema.parse(JSON.parse(repairedJson));
+            const repairedPlan = JSON.parse(repairedJson) as {
+              plan?: unknown;
+              agents?: unknown[];
+            };
+
+            if (Array.isArray(repairedPlan.agents)) {
+              repairedPlan.agents = repairedPlan.agents.slice(0, 4);
+            }
+
+            plan = swarmPlanSchema.parse(repairedPlan);
             console.log(
               '[ComputerAgent] Successfully repaired and validated plan JSON',
             );
@@ -649,7 +694,7 @@ export class SwarmExecutor {
       role: 'tool',
       id: toolCall.id,
       name: toolCall.name,
-      content: JSON.stringify(result),
+      content: renderToolMessageForLLM(result),
     };
 
     agentMessages.push(toolMessage);
@@ -814,6 +859,19 @@ export class SwarmExecutor {
         outcome.createdPaths.push(
           ...getCreatedPathsFromToolResult(toolCall.name, result),
         );
+      }
+    }
+
+    if (!outcome.completed) {
+      const implicitCompletion = inferImplicitCompletion(agent.role, outcome);
+
+      if (implicitCompletion) {
+        outcome.completed = true;
+        appendObservationStep(session, blockId, {
+          type: 'observation',
+          observation: implicitCompletion,
+          success: true,
+        });
       }
     }
 

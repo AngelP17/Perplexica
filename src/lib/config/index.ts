@@ -241,6 +241,11 @@ class ConfigManager {
       ...this.currentConfig.search,
       ...migratedConfig.search,
     };
+    migratedConfig.search.searxngURL =
+      typeof migratedConfig.search.searxngURL === 'string' &&
+      migratedConfig.search.searxngURL.trim()
+        ? migratedConfig.search.searxngURL.trim()
+        : DEFAULT_SEARXNG_URL;
     migratedConfig.modelProviders = migratedConfig.modelProviders.map(
       (provider) => ({
         ...provider,
@@ -364,7 +369,12 @@ class ConfigManager {
     }
 
     const finalKey = parts[parts.length - 1];
-    target[finalKey] = val;
+    target[finalKey] =
+      key === 'search.searxngURL'
+        ? typeof val === 'string' && val.trim()
+          ? val.trim()
+          : DEFAULT_SEARXNG_URL
+        : val;
 
     this.saveConfig();
   }

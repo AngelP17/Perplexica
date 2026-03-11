@@ -63,7 +63,9 @@ class SessionManager {
     if (event === 'end' || event === 'error') {
       this.terminalState = true;
     }
-    this.emitter.emit(event, data);
+    if (event !== 'error' || this.emitter.listenerCount('error') > 0) {
+      this.emitter.emit(event, data);
+    }
     this.events.push({ event, data: this.cloneEventData(data) });
   }
 
