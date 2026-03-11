@@ -4,6 +4,9 @@ import { Config, ConfigModelProvider, UIConfigSections } from './types';
 import { hashObj } from '../serverUtils';
 import { getModelProvidersUIConfigSection } from '../models/providers';
 
+const DEFAULT_SEARXNG_URL =
+  process.env.SEARXNG_API_URL?.trim() || 'http://localhost:8080';
+
 class ConfigManager {
   configPath: string = path.join(
     process.env.DATA_DIR || process.cwd(),
@@ -17,7 +20,7 @@ class ConfigManager {
     personalization: {},
     modelProviders: [],
     search: {
-      searxngURL: '',
+      searxngURL: DEFAULT_SEARXNG_URL,
     },
   };
   uiConfigSections: UIConfigSections = {
@@ -108,8 +111,8 @@ class ConfigManager {
         type: 'string',
         required: false,
         description: 'The URL of your SearXNG instance',
-        placeholder: 'http://localhost:4000',
-        default: '',
+        placeholder: DEFAULT_SEARXNG_URL,
+        default: DEFAULT_SEARXNG_URL,
         scope: 'server',
         env: 'SEARXNG_API_URL',
       },

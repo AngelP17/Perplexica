@@ -14,19 +14,31 @@ const SetupWizard = ({
   const [showSetup, setShowSetup] = useState(false);
   const [setupState, setSetupState] = useState(1);
 
-  const delay = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
-
   useEffect(() => {
-    (async () => {
-      await delay(2500);
-      setShowWelcome(false);
-      await delay(600);
-      setShowSetup(true);
-      setSetupState(1);
-      await delay(1500);
-      setSetupState(2);
-    })();
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
+
+    timers.push(
+      setTimeout(() => {
+        setShowWelcome(false);
+      }, 2500),
+    );
+
+    timers.push(
+      setTimeout(() => {
+        setShowSetup(true);
+        setSetupState(1);
+      }, 3100),
+    );
+
+    timers.push(
+      setTimeout(() => {
+        setSetupState(2);
+      }, 4600),
+    );
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+    };
   }, []);
 
   return (

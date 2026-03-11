@@ -17,9 +17,10 @@ RUN yarn build
 
 FROM node:24.5.0-slim
 
+ARG SEARXNG_COMMIT=8b95b2058be41580270f1dc348847c3342ee129b
+
 RUN apt-get update && apt-get install -y \
     python3-dev python3-babel python3-venv python-is-python3 \
-    uwsgi uwsgi-plugin-python3 \
     git build-essential libxslt-dev zlib1g-dev libffi-dev libssl-dev \
     curl sudo \
     && rm -rf /var/lib/apt/lists/*
@@ -49,13 +50,14 @@ RUN chown -R "searxng:searxng" "/usr/local/searxng"
 
 COPY searxng/settings.yml /etc/searxng/settings.yml
 COPY searxng/limiter.toml /etc/searxng/limiter.toml
-COPY searxng/uwsgi.ini /etc/searxng/uwsgi.ini
 RUN chown -R searxng:searxng /etc/searxng
 
 USER searxng
 
 RUN git clone "https://github.com/searxng/searxng" \
-                   "/usr/local/searxng/searxng-src"
+                   "/usr/local/searxng/searxng-src" && \
+    cd "/usr/local/searxng/searxng-src" && \
+    git checkout "$SEARXNG_COMMIT"
 
 RUN python3 -m venv "/usr/local/searxng/searx-pyenv"
 RUN "/usr/local/searxng/searx-pyenv/bin/pip" install --upgrade pip setuptools wheel pyyaml msgspec typing_extensions

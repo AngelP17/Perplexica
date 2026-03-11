@@ -5,10 +5,15 @@ To update Vane to the latest version, follow these steps:
 ```mermaid
 flowchart LR
     Pull[Pull latest code or image] --> Install[Install dependencies or image]
-    Install --> Build[Rebuild container/app]
-    Build --> Restart[Restart Perplexica]
+    Install --> Build[Rebuild container or app]
+    Build --> Restart[Restart Vane]
     Restart --> Verify[Verify at localhost:3000]
 ```
+
+The bundled full Docker image pins the embedded SearXNG checkout to a
+specific upstream commit for reproducible builds. When you intentionally
+update SearXNG, review `ARG SEARXNG_COMMIT` in
+`Dockerfile` and test the bundled search path before shipping.
 
 ## For Docker users (Using pre-built images)
 
