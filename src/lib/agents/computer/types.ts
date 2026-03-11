@@ -3,24 +3,23 @@ import BaseLLM from '@/lib/models/base/llm';
 import { Tool } from '@/lib/models/types';
 import { ChatTurnMessage } from '@/lib/types';
 import type { ComputerPersonaId } from './personas';
+import type { ComputerSandbox } from './sandbox';
 
 export type ComputerAgentConfig = {
   llm: BaseLLM<any>;
   mode: 'speed' | 'balanced' | 'quality';
   swarmEnabled: boolean;
   systemInstructions: string;
+  sandbox: ComputerSandbox;
   specialistPersonaId?: ComputerPersonaId;
   providerId?: string;
   chatModelKey?: string;
   preferredCoderModelKey?: string;
   resolveChatModel?: (modelKey: string) => Promise<BaseLLM<any>>;
-  resolveVisionModel?: () => Promise<
-    | {
-        llm: BaseLLM<any>;
-        modelKey: string;
-      }
-    | null
-  >;
+  resolveVisionModel?: () => Promise<{
+    llm: BaseLLM<any>;
+    modelKey: string;
+  } | null>;
 };
 
 export type ComputerAgentInput = {
@@ -37,11 +36,18 @@ export type ComputerToolResult = {
   [key: string]: unknown;
 };
 
+export type ComputerToolExecutionContext = {
+  sandbox: ComputerSandbox;
+};
+
 export interface ComputerTool<
   TSchema extends z.ZodObject<any> = z.ZodObject<any>,
 > extends Tool {
   schema: TSchema;
-  execute: (params: z.infer<TSchema>) => Promise<ComputerToolResult>;
+  execute: (
+    params: z.infer<TSchema>,
+    context: ComputerToolExecutionContext,
+  ) => Promise<ComputerToolResult>;
 }
 
 export type ComputerSkillName =

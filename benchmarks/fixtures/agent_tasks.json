@@ -1,0 +1,22 @@
+{
+  "tasks": [
+    {
+      "id": "write-status-file",
+      "task": "Create a file named status.txt that says benchmark completed.",
+      "expectedSignals": ["status.txt", "completed"],
+      "interactionMode": "computer"
+    },
+    {
+      "id": "python-fibonacci",
+      "task": "Write and run a Python script that prints the first 8 Fibonacci numbers.",
+      "expectedSignals": ["0", "1", "13"],
+      "interactionMode": "computer"
+    },
+    {
+      "id": "local-research",
+      "task": "List the files in the workspace and summarize what was created during the run.",
+      "expectedSignals": ["workspace", "created"],
+      "interactionMode": "computer"
+    }
+  ]
+}

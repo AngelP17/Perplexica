@@ -4,6 +4,8 @@ import { classify } from './classifier';
 import Researcher from './researcher';
 import { getWriterPrompt } from '@/lib/prompts/search/writer';
 import { WidgetExecutor } from './widgets';
+import { buildSearchContext } from './context';
+import { classifyFailure } from '@/lib/evaluation/failureTaxonomy';
 
 class APISearchAgent {
   async searchAsync(session: SessionManager, input: SearchAgentInput) {
@@ -50,19 +52,12 @@ class APISearchAgent {
         type: 'researchComplete',
       });
 
-      const finalContext =
-        searchResults?.searchFindings
-          .map(
-            (result, index) =>
-              `<result index=${index + 1} title=${result.metadata.title}>${result.content}</result>`,
-          )
-          .join('\n') || '';
-
-      const widgetContext = widgetOutputs
-        .map((output) => `<result>${output.llmContext}</result>`)
-        .join('\n-------------\n');
-
-      const finalContextWithWidgets = `<search_results note="These are the search results and assistant can cite these">\n${finalContext}\n</search_results>\n<widgets_result noteForAssistant="Its output is already showed to the user, assistant can use this information to answer the query but do not CITE this as a souce">\n${widgetContext}\n</widgets_result>`;
+      const finalContextWithWidgets = buildSearchContext(
+        input.followUp,
+        input.config.mode,
+        searchResults?.searchFindings,
+        widgetOutputs,
+      );
 
       const writerPrompt = getWriterPrompt(
         finalContextWithWidgets,
@@ -95,9 +90,12 @@ class APISearchAgent {
     } catch (error) {
       console.error('API search agent failed:', error);
 
+      const message =
+        error instanceof Error ? error.message : 'Search request failed';
+      const failure = classifyFailure(message);
+
       session.emit('error', {
-        data:
-          error instanceof Error ? error.message : 'Search request failed',
+        data: `${message} [${failure.type}]`,
       });
     }
   }

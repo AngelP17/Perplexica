@@ -23,6 +23,7 @@ import {
   ComputerAgentInput,
   ComputerSkillName,
   ComputerToolResult,
+  ComputerToolExecutionContext,
   SwarmAgentExecutionOutcome,
   SwarmExecutionOutcome,
   SwarmPlan,
@@ -36,7 +37,12 @@ import {
   type ComputerPersona,
 } from './personas';
 
-const executionRoleSchema = z.enum(['coder', 'researcher', 'browser', 'vision']);
+const executionRoleSchema = z.enum([
+  'coder',
+  'researcher',
+  'browser',
+  'vision',
+]);
 
 const swarmPlanSchema = z.object({
   plan: z.string().min(1).max(800),
@@ -231,19 +237,19 @@ const withPersonaOverlay = (
   return `${basePrompt}\n\n${overlay}`;
 };
 
-const getWorkspaceRoot = () => path.resolve(getWorkspaceBase());
+const getWorkspaceRoot = (input?: ComputerAgentInput) =>
+  path.resolve(
+    getWorkspaceBase(input ? { sandbox: input.config.sandbox } : undefined),
+  );
 
-const getDisplayPath = (targetPath: string) => {
-  const relativePath = path.relative(getWorkspaceRoot(), targetPath);
+const getDisplayPath = (workspaceRoot: string, targetPath: string) => {
+  const relativePath = path.relative(workspaceRoot, targetPath);
 
   if (!relativePath) {
     return '.';
   }
 
-  if (
-    !relativePath.startsWith('..') &&
-    !path.isAbsolute(relativePath)
-  ) {
+  if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
     return relativePath;
   }
 
@@ -290,7 +296,9 @@ const getCreatedPathsFromToolResult = (
 const getExecutionWarnings = (outcome: SwarmExecutionOutcome) => {
   return uniqueStrings(
     outcome.agentOutcomes
-      .filter((agentOutcome) => agentOutcome.completed && agentOutcome.hadToolErrors)
+      .filter(
+        (agentOutcome) => agentOutcome.completed && agentOutcome.hadToolErrors,
+      )
       .flatMap((agentOutcome) => agentOutcome.errors)
       .map((error) => truncateText(error, 180)),
   );
@@ -316,7 +324,9 @@ const buildExecutionErrorMessage = (outcome: SwarmExecutionOutcome) => {
   }
 
   if (
-    outcome.agentOutcomes.some((agentOutcome) => agentOutcome.iterationLimitReached)
+    outcome.agentOutcomes.some(
+      (agentOutcome) => agentOutcome.iterationLimitReached,
+    )
   ) {
     return 'Computer task reached the iteration limit before finishing.';
   }
@@ -324,20 +334,29 @@ const buildExecutionErrorMessage = (outcome: SwarmExecutionOutcome) => {
   return blockingErrors[0] || 'Computer task did not complete.';
 };
 
-const buildExecutionSummary = (outcome: SwarmExecutionOutcome) => {
-  const createdPaths = uniqueStrings(outcome.createdPaths).map(getDisplayPath);
+const buildExecutionSummary = (
+  outcome: SwarmExecutionOutcome,
+  workspaceRoot: string,
+) => {
+  const createdPaths = uniqueStrings(outcome.createdPaths).map((filePath) =>
+    getDisplayPath(workspaceRoot, filePath),
+  );
 
   if (outcome.success) {
     const parts = ['Task completed in computer mode.'];
 
     if (createdPaths.length > 0) {
-      parts.push(`Created: ${createdPaths.map((filePath) => `\`${filePath}\``).join(', ')}.`);
+      parts.push(
+        `Created: ${createdPaths.map((filePath) => `\`${filePath}\``).join(', ')}.`,
+      );
     }
 
     const warnings = getExecutionWarnings(outcome);
 
     if (warnings.length > 0) {
-      parts.push('The run recovered from earlier tool errors. Review Computer Steps above for the full trace.');
+      parts.push(
+        'The run recovered from earlier tool errors. Review Computer Steps above for the full trace.',
+      );
     }
 
     if (createdPaths.length === 0 && warnings.length === 0) {
@@ -360,14 +379,18 @@ const buildExecutionSummary = (outcome: SwarmExecutionOutcome) => {
   }
 
   if (
-    outcome.agentOutcomes.some((agentOutcome) => agentOutcome.iterationLimitReached)
+    outcome.agentOutcomes.some(
+      (agentOutcome) => agentOutcome.iterationLimitReached,
+    )
   ) {
-    parts.push('At least one agent reached the iteration limit before finishing.');
+    parts.push(
+      'At least one agent reached the iteration limit before finishing.',
+    );
   }
 
   if (hasPathTraversal) {
     parts.push(
-      `File tools only work inside the workspace \`${getWorkspaceRoot()}\` using relative paths like \`.\` or \`notes/file.txt\`, or absolute paths that stay under that root.`,
+      `File tools only work inside the workspace \`${workspaceRoot}\` using relative paths like \`.\` or \`notes/file.txt\`, or absolute paths that stay under that root.`,
     );
   }
 
@@ -603,7 +626,9 @@ export class SwarmExecutor {
             .join(', '),
         };
       } else {
-        result = await tool.execute(parsedArgs.data);
+        result = await tool.execute(parsedArgs.data, {
+          sandbox: input.config.sandbox,
+        } satisfies ComputerToolExecutionContext);
       }
     }
 
@@ -697,9 +722,13 @@ export class SwarmExecutor {
             ? `Supervising persona: ${selectedPersona.name} - ${selectedPersona.description}`
             : null,
           `Available tools: ${tools.map((tool) => tool.name).join(', ') || 'none'}`,
-          `Workspace root: ${getWorkspaceRoot()}`,
+          `Workspace root: ${getWorkspaceRoot(input)}`,
           agent.role === 'vision' && likelyImageArtifacts.length > 0
-            ? `Relevant image artifacts from earlier steps: ${likelyImageArtifacts.map(getDisplayPath).join(', ')}`
+            ? `Relevant image artifacts from earlier steps: ${likelyImageArtifacts
+                .map((filePath) =>
+                  getDisplayPath(getWorkspaceRoot(input), filePath),
+                )
+                .join(', ')}`
             : null,
           'All file paths must stay inside this workspace. Prefer relative paths such as "." or "notes/file.txt". Absolute paths are allowed only when they stay under this workspace root.',
           agent.role === 'vision' && likelyImageArtifacts.length > 0
@@ -829,7 +858,9 @@ export class SwarmExecutor {
     const summaryContext = {
       success: outcome.success,
       hadWarnings: outcome.hadWarnings,
-      createdPaths: uniqueStrings(outcome.createdPaths).map(getDisplayPath),
+      createdPaths: uniqueStrings(outcome.createdPaths).map((filePath) =>
+        getDisplayPath(getWorkspaceRoot(input), filePath),
+      ),
       warnings: getExecutionWarnings(outcome),
       persona: selectedPersona
         ? {
@@ -952,7 +983,7 @@ export class SwarmExecutor {
       summary: '',
     };
 
-    outcome.summary = buildExecutionSummary(outcome);
+    outcome.summary = buildExecutionSummary(outcome, getWorkspaceRoot(input));
     outcome.errorMessage = outcome.success
       ? undefined
       : buildExecutionErrorMessage(outcome);

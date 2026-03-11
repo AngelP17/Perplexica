@@ -1,16 +1,6 @@
-import { getEncoding } from 'js-tiktoken';
+import { getTokenCount } from './tokenCount';
 
 const splitRegex = /(?<=\. |\n|! |\? |; |:\s|\d+\.\s|- |\* )/g;
-
-const enc = getEncoding('cl100k_base');
-
-const getTokenCount = (text: string): number => {
-  try {
-    return enc.encode(text).length;
-  } catch {
-    return Math.ceil(text.length / 4);
-  }
-};
 
 export const splitText = (
   text: string,

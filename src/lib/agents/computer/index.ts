@@ -4,12 +4,10 @@ import { messages } from '@/lib/db/schema';
 import SessionManager from '@/lib/session';
 import { ComputerBlock } from '@/lib/types';
 import { and, eq, gt } from 'drizzle-orm';
-import {
-  getComputerPersonaById,
-  toComputerPersonaSummary,
-} from './personas';
+import { getComputerPersonaById, toComputerPersonaSummary } from './personas';
 import { SwarmExecutor } from './swarmExecutor';
 import { ComputerAgentInput } from './types';
+import { classifyFailure } from '@/lib/evaluation/failureTaxonomy';
 
 class ComputerAgent {
   async executeAsync(session: SessionManager, input: ComputerAgentInput) {
@@ -150,8 +148,9 @@ class ComputerAgent {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Computer task failed';
+      const failure = classifyFailure(message);
 
-      session.emit('error', { data: message });
+      session.emit('error', { data: `${message} [${failure.type}]` });
 
       await db
         .update(messages)

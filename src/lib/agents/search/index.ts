@@ -8,6 +8,8 @@ import db from '@/lib/db';
 import { messages } from '@/lib/db/schema';
 import { and, eq, gt } from 'drizzle-orm';
 import { TextBlock } from '@/lib/types';
+import { buildSearchContext } from './context';
+import { classifyFailure } from '@/lib/evaluation/failureTaxonomy';
 
 class SearchAgent {
   async searchAsync(session: SessionManager, input: SearchAgentInput) {
@@ -100,19 +102,12 @@ class SearchAgent {
         type: 'researchComplete',
       });
 
-      const finalContext =
-        searchResults?.searchFindings
-          .map(
-            (result, index) =>
-              `<result index=${index + 1} title=${result.metadata.title}>${result.content}</result>`,
-          )
-          .join('\n') || '';
-
-      const widgetContext = widgetOutputs
-        .map((output) => `<result>${output.llmContext}</result>`)
-        .join('\n-------------\n');
-
-      const finalContextWithWidgets = `<search_results note="These are the search results and assistant can cite these">\n${finalContext}\n</search_results>\n<widgets_result noteForAssistant="Its output is already showed to the user, assistant can use this information to answer the query but do not CITE this as a souce">\n${widgetContext}\n</widgets_result>`;
+      const finalContextWithWidgets = buildSearchContext(
+        input.followUp,
+        input.config.mode,
+        searchResults?.searchFindings,
+        widgetOutputs,
+      );
 
       const writerPrompt = getWriterPrompt(
         finalContextWithWidgets,
@@ -196,7 +191,9 @@ class SearchAgent {
       const message =
         error instanceof Error ? error.message : 'Search request failed';
 
-      session.emit('error', { data: message });
+      const failure = classifyFailure(message);
+
+      session.emit('error', { data: `${message} [${failure.type}]` });
 
       try {
         await db

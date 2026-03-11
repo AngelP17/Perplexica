@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import ModelRegistry from '@/lib/models/registry';
 import UploadManager from '@/lib/uploads/manager';
+import { enforceRateLimit } from '@/lib/middleware/rateLimiter';
 
 export async function POST(req: Request) {
   try {
+    const rateLimit = enforceRateLimit(req, 'upload');
+    if (!rateLimit.allowed) {
+      return rateLimit.response;
+    }
+
     const formData = await req.formData();
 
     const files = formData.getAll('files') as File[];
@@ -13,7 +19,7 @@ export async function POST(req: Request) {
     if (!embeddingModel || !embeddingModelProvider) {
       return NextResponse.json(
         { message: 'Missing embedding model or provider' },
-        { status: 400 },
+        { status: 400, headers: rateLimit.headers },
       );
     }
 
@@ -29,6 +35,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       files: processedFiles,
+    }, {
+      headers: rateLimit.headers,
     });
   } catch (error) {
     console.error('Error uploading file:', error);

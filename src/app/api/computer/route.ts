@@ -14,6 +14,8 @@ import { ChatTurnMessage } from '@/lib/types';
 import db from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { chats } from '@/lib/db/schema';
+import { enforceRateLimit } from '@/lib/middleware/rateLimiter';
+import { createComputerSandbox } from '@/lib/agents/computer/sandbox';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,18 +107,27 @@ const ensureChatExists = async (input: { id: string; query: string }) => {
 
 export const POST = async (req: Request) => {
   try {
+    const rateLimit = enforceRateLimit(req, 'computer');
+    if (!rateLimit.allowed) {
+      return rateLimit.response;
+    }
+
     const reqBody = (await req.json()) as Body;
     const parseBody = safeValidateBody(reqBody);
 
     if (!parseBody.success) {
       return Response.json(
         { message: 'Invalid request body', error: parseBody.error },
-        { status: 400 },
+        { status: 400, headers: rateLimit.headers },
       );
     }
 
     const body = parseBody.data;
     const { message } = body;
+    const sandbox = await createComputerSandbox({
+      chatId: message.chatId,
+      messageId: message.messageId,
+    });
 
     const registry = new ModelRegistry();
     const chatSelection = await loadRoutedChatModel(
@@ -203,11 +214,13 @@ export const POST = async (req: Request) => {
         mode: body.optimizationMode,
         swarmEnabled: body.swarmEnabled,
         systemInstructions: body.systemInstructions || '',
+        sandbox,
         providerId: body.chatModel.providerId,
         chatModelKey: chatSelection.modelKey,
         preferredCoderModelKey,
-        specialistPersonaId:
-          body.specialistPersonaId as ComputerPersonaId | undefined,
+        specialistPersonaId: body.specialistPersonaId as
+          | ComputerPersonaId
+          | undefined,
         resolveChatModel: async (modelKey: string) =>
           registry.loadChatModel(body.chatModel.providerId, modelKey),
         resolveVisionModel: async () => {
@@ -277,6 +290,7 @@ export const POST = async (req: Request) => {
 
     return new Response(responseStream.readable, {
       headers: {
+        ...rateLimit.headers,
         'Content-Type': 'text/event-stream',
         Connection: 'keep-alive',
         'Cache-Control': 'no-cache, no-transform',

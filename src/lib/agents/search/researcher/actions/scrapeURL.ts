@@ -60,6 +60,7 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
                   metadata: {
                     url,
                     title: title,
+                    sourceType: 'web',
                   },
                 },
               ],
@@ -93,6 +94,7 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
               metadata: {
                 url,
                 title: title,
+                sourceType: 'web',
               },
             });
 
@@ -115,6 +117,7 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
             metadata: {
               url,
               title: title,
+              sourceType: 'web',
             },
           });
         } catch (error) {
@@ -123,6 +126,7 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
             metadata: {
               url,
               title: `Error fetching ${url}`,
+              sourceType: 'web',
             },
           });
         }

@@ -67,6 +67,7 @@ const academicSearchAction: ResearchAction<typeof schema> = {
         metadata: {
           title: r.title,
           url: r.url,
+          sourceType: 'academic',
         },
       }));
 

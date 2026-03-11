@@ -1,124 +1,174 @@
-/**
- * Token Bucket Rate Limiting Middleware
- *
- * Protects API endpoints from abuse and ensures fair usage.
- * Uses sliding window algorithm via express-rate-limit.
- *
- * Expected impact:
- * - Prevents DoS attacks and API abuse
- * - Protects against cost spikes from excessive usage
- * - Ensures fair resource allocation
- */
+type RateLimitName = 'chat' | 'search' | 'upload' | 'computer';
 
-import rateLimit from 'express-rate-limit';
+type RateLimitConfig = {
+  windowMs: number;
+  max: number;
+  error: string;
+};
 
-/**
- * Rate limiter for chat endpoints
- * - Burst: 10 requests/minute
- * - Sustained: 100 requests/hour
- */
-export const chatRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 10, // Max 10 requests per minute
-  message: {
-    error: 'Too many requests from this IP, please try again later.',
-    retryAfter: '1 minute',
-  },
-  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-  legacyHeaders: false, // Disable `X-RateLimit-*` headers
-  // Skip rate limiting for localhost in development
-  skip: (req) => {
-    if (process.env.NODE_ENV === 'development') {
-      const ip = req.ip || req.socket.remoteAddress;
-      return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+type RateLimitBucket = {
+  count: number;
+  resetAt: number;
+};
+
+type RateLimitCheck =
+  | {
+      allowed: true;
+      headers: HeadersInit;
     }
-    return false;
-  },
-  handler: (req, res) => {
-    res.status(429).json({
-      error:
-        'Rate limit exceeded. Please wait before making more requests.',
-      retryAfter: Math.ceil(60 - (Date.now() % 60000) / 1000), // Seconds until next window
-    });
-  },
-});
+  | {
+      allowed: false;
+      response: Response;
+    };
 
-/**
- * Rate limiter for search endpoints
- * - Burst: 10 requests/minute
- * - Sustained: 100 requests/hour
- */
-export const searchRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 10, // Max 10 requests per minute
-  message: {
-    error: 'Too many search requests, please try again later.',
-    retryAfter: '1 minute',
+const RATE_LIMITS: Record<RateLimitName, RateLimitConfig> = {
+  chat: {
+    windowMs: 60 * 1000,
+    max: 10,
+    error: 'Rate limit exceeded. Please wait before making more requests.',
   },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    if (process.env.NODE_ENV === 'development') {
-      const ip = req.ip || req.socket.remoteAddress;
-      return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  search: {
+    windowMs: 60 * 1000,
+    max: 10,
+    error: 'Search rate limit exceeded. Please wait before searching again.',
+  },
+  upload: {
+    windowMs: 60 * 1000,
+    max: 5,
+    error: 'Upload rate limit exceeded. Please wait before uploading again.',
+  },
+  computer: {
+    windowMs: 60 * 1000,
+    max: 8,
+    error: 'Computer mode rate limit exceeded. Please wait before retrying.',
+  },
+};
+
+const buckets =
+  (
+    globalThis as {
+      __perplexicaRateLimitBuckets?: Map<string, RateLimitBucket>;
     }
-    return false;
-  },
-  handler: (req, res) => {
-    res.status(429).json({
-      error: 'Search rate limit exceeded. Please wait before searching again.',
-      retryAfter: Math.ceil(60 - (Date.now() % 60000) / 1000),
-    });
-  },
-});
+  ).__perplexicaRateLimitBuckets || new Map<string, RateLimitBucket>();
 
-/**
- * Stricter rate limiter for expensive operations (e.g., uploads)
- * - 5 requests per minute
- */
-export const uploadRateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  message: {
-    error: 'Too many upload requests, please try again later.',
-    retryAfter: '1 minute',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    if (process.env.NODE_ENV === 'development') {
-      const ip = req.ip || req.socket.remoteAddress;
-      return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+if (process.env.NODE_ENV !== 'production') {
+  (
+    globalThis as {
+      __perplexicaRateLimitBuckets?: Map<string, RateLimitBucket>;
     }
-    return false;
-  },
-  handler: (req, res) => {
-    res.status(429).json({
-      error: 'Upload rate limit exceeded. Please wait before uploading again.',
-      retryAfter: Math.ceil(60 - (Date.now() % 60000) / 1000),
-    });
-  },
-});
+  ).__perplexicaRateLimitBuckets = buckets;
+}
 
-/**
- * Get rate limit statistics (for monitoring/debugging)
- */
-export const getRateLimitStats = () => {
+const getClientIdentifier = (req: Request) => {
+  const forwardedFor = req.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) {
+    return realIp.trim();
+  }
+
+  return 'unknown';
+};
+
+const isLocalDevelopmentRequest = (identifier: string) => {
+  if (process.env.NODE_ENV !== 'development') {
+    return false;
+  }
+
+  return (
+    identifier === '127.0.0.1' ||
+    identifier === '::1' ||
+    identifier === '::ffff:127.0.0.1' ||
+    identifier === 'localhost' ||
+    identifier === 'unknown'
+  );
+};
+
+const buildHeaders = (
+  config: RateLimitConfig,
+  bucket: RateLimitBucket,
+): Record<string, string> => {
+  const resetSeconds = Math.max(
+    0,
+    Math.ceil((bucket.resetAt - Date.now()) / 1000),
+  );
+
   return {
-    chat: {
-      windowMs: 60 * 1000,
-      max: 10,
-      type: 'sliding-window',
-    },
-    search: {
-      windowMs: 60 * 1000,
-      max: 10,
-      type: 'sliding-window',
-    },
-    upload: {
-      windowMs: 60 * 1000,
-      max: 5,
-      type: 'sliding-window',
-    },
+    'RateLimit-Limit': String(config.max),
+    'RateLimit-Remaining': String(Math.max(0, config.max - bucket.count)),
+    'RateLimit-Reset': String(resetSeconds),
   };
+};
+
+export const enforceRateLimit = (
+  req: Request,
+  name: RateLimitName,
+): RateLimitCheck => {
+  const identifier = getClientIdentifier(req);
+
+  if (isLocalDevelopmentRequest(identifier)) {
+    return {
+      allowed: true,
+      headers: buildHeaders(RATE_LIMITS[name], {
+        count: 0,
+        resetAt: Date.now() + RATE_LIMITS[name].windowMs,
+      }),
+    };
+  }
+
+  const config = RATE_LIMITS[name];
+  const key = `${name}:${identifier}`;
+  const now = Date.now();
+  const existing = buckets.get(key);
+
+  const bucket =
+    !existing || existing.resetAt <= now
+      ? {
+          count: 0,
+          resetAt: now + config.windowMs,
+        }
+      : existing;
+
+  if (bucket.count >= config.max) {
+    const headers = buildHeaders(config, bucket);
+
+    return {
+      allowed: false,
+      response: Response.json(
+        {
+          message: config.error,
+          retryAfter: headers['RateLimit-Reset'],
+        },
+        {
+          status: 429,
+          headers,
+        },
+      ),
+    };
+  }
+
+  bucket.count += 1;
+  buckets.set(key, bucket);
+
+  return {
+    allowed: true,
+    headers: buildHeaders(config, bucket),
+  };
+};
+
+export const getRateLimitStats = () => {
+  return Object.fromEntries(
+    Object.entries(RATE_LIMITS).map(([name, config]) => [
+      name,
+      {
+        ...config,
+        activeBuckets: Array.from(buckets.keys()).filter((key) =>
+          key.startsWith(`${name}:`),
+        ).length,
+      },
+    ]),
+  );
 };

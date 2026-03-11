@@ -3,6 +3,7 @@
 ## Problem Statement
 
 On smaller local Ollama models like **qwen3.5:9b**, computer mode experienced inconsistency in:
+
 1. **Swarm Planning** - Generating valid structured JSON for multi-agent plans
 2. **Browser Automation** - Executing natural-language browser tasks reliably
 
@@ -14,6 +15,17 @@ Previously, the system relied heavily on fallback to the single-agent operator m
 
 We've dramatically improved reliability through **better prompting, retry logic, and JSON repair**, reducing fallback dependency by ~80%.
 
+```mermaid
+flowchart TD
+    Start[Small model plan request] --> Attempt1[Structured output attempt]
+    Attempt1 -->|fails| Attempt2[Text generation + JSON repair]
+    Attempt2 -->|fails| Attempt3[Reminder + repair retry]
+    Attempt3 -->|fails| Fallback[Single operator fallback]
+    Attempt1 -->|passes| Execute[Execute swarm plan]
+    Attempt2 -->|passes| Execute
+    Attempt3 -->|passes| Execute
+```
+
 ---
 
 ## 1. Enhanced Planner Prompt ✅
@@ -21,13 +33,15 @@ We've dramatically improved reliability through **better prompting, retry logic,
 ### What Changed
 
 **Before:**
+
 ```typescript
-'Produce a compact execution plan using only the available execution roles.'
-'Prefer the fewest agents that can complete the task reliably.'
-'Return valid JSON only.'
+'Produce a compact execution plan using only the available execution roles.';
+'Prefer the fewest agents that can complete the task reliably.';
+'Return valid JSON only.';
 ```
 
 **After:**
+
 ```typescript
 'Produce a compact execution plan using only these execution roles:
 - coder: for writing files, reading files, listing files, and running Python code
@@ -63,20 +77,22 @@ Return ONLY valid JSON matching this exact format:
 ### What Changed
 
 **Before:**
+
 ```typescript
-'You are a task planning specialist for a computer agent.'
-'Decompose the user task into a minimal sequence of execution roles.'
-'Return only valid JSON that matches the requested schema.'
+'You are a task planning specialist for a computer agent.';
+'Decompose the user task into a minimal sequence of execution roles.';
+'Return only valid JSON that matches the requested schema.';
 ```
 
 **After:**
+
 ```typescript
-'You are a task planning specialist.'
-'Your ONLY job is to return valid JSON.'
-'Available roles: coder (file+Python), researcher (read files), browser (web automation).'
-'Use 1-3 agents maximum.'
-'Format: {"plan":"description","agents":[{"role":"coder|researcher|browser","task":"what to do"}]}'
-'Do not add explanations, just return the JSON object.'
+'You are a task planning specialist.';
+'Your ONLY job is to return valid JSON.';
+'Available roles: coder (file+Python), researcher (read files), browser (web automation).';
+'Use 1-3 agents maximum.';
+'Format: {"plan":"description","agents":[{"role":"coder|researcher|browser","task":"what to do"}]}';
+'Do not add explanations, just return the JSON object.';
 ```
 
 ### Why It Works
@@ -94,7 +110,7 @@ Return ONLY valid JSON matching this exact format:
 
 Added intelligent retry mechanism with 3 attempts:
 
-```typescript
+````typescript
 for (let attempt = 0; attempt <= maxRetries; attempt++) {
   try {
     // Attempt 1: Use structured output (generateObject)
@@ -103,7 +119,7 @@ for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Attempt 2-3: Fallback to text generation + JSON repair
     const response = await llm.generateText({
       messages: [...messages, reminder],
-      options: { temperature: 0.1 }
+      options: { temperature: 0.1 },
     });
 
     let jsonText = response.content.trim();
@@ -117,7 +133,7 @@ for (let attempt = 0; attempt <= maxRetries; attempt++) {
     plan = swarmPlanSchema.parse(JSON.parse(repairedJson));
   }
 }
-```
+````
 
 ### Why It Works
 
@@ -135,13 +151,15 @@ for (let attempt = 0; attempt <= maxRetries; attempt++) {
 ### What Changed
 
 **Before:**
+
 ```typescript
-'You control a Playwright browser.'
-'Use selectors deliberately, wait for pages to settle.'
-'Capture concrete evidence such as scraped text or screenshots.'
+'You control a Playwright browser.';
+'Use selectors deliberately, wait for pages to settle.';
+'Capture concrete evidence such as scraped text or screenshots.';
 ```
 
 **After:**
+
 ```typescript
 'You control a Playwright browser. Follow this sequence:
 1. ALWAYS start by calling browser_navigate with the URL
@@ -172,13 +190,15 @@ Example: browser_navigate needs {"url":"https://example.com"}, not just the URL.
 Improved the fallback single-agent operator prompt with explicit instructions:
 
 **Before:**
+
 ```typescript
-'You are a practical computer operator.'
-'Use tools to complete the task instead of only describing what should happen.'
-'When you call a tool, provide every required argument exactly as named in the tool schema.'
+'You are a practical computer operator.';
+'Use tools to complete the task instead of only describing what should happen.';
+'When you call a tool, provide every required argument exactly as named in the tool schema.';
 ```
 
 **After:**
+
 ```typescript
 'You are a practical computer operator with access to file tools, Python execution, and browser automation.
 For file tasks: use write_file, read_file, list_files.
@@ -229,12 +249,12 @@ Work step-by-step and verify results before continuing.'
 
 ### Key Metrics
 
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Planning Success | 35% | 88% | +53% ⬆️ |
-| Browser Success | 45% | 78% | +33% ⬆️ |
-| Fallback Rate | 65% | 12% | -53% ⬇️ |
-| First-Attempt Success | 30% | 70% | +40% ⬆️ |
+| Metric                | Before | After | Change  |
+| --------------------- | ------ | ----- | ------- |
+| Planning Success      | 35%    | 88%   | +53% ⬆️ |
+| Browser Success       | 45%    | 78%   | +33% ⬆️ |
+| Fallback Rate         | 65%    | 12%   | -53% ⬇️ |
+| First-Attempt Success | 30%    | 70%   | +40% ⬆️ |
 
 ---
 
@@ -262,6 +282,7 @@ Work step-by-step and verify results before continuing.'
 ### For Small Models (qwen3.5:9b, llama3.1:8b)
 
 **Swarm Planning Tests:**
+
 ```
 ✅ "Create a Python script to calculate fibonacci and save to file"
 ✅ "Navigate to example.com and save the page title to a file"
@@ -270,6 +291,7 @@ Work step-by-step and verify results before continuing.'
 ```
 
 **Browser Task Tests:**
+
 ```
 ✅ "Go to example.com and take a screenshot"
 ✅ "Navigate to github.com and scrape the main heading"
@@ -278,6 +300,7 @@ Work step-by-step and verify results before continuing.'
 ```
 
 **Complex Tasks:**
+
 ```
 ✅ "Create a web scraper for quotes, save to JSON, and analyze most common words"
 ✅ "Download data from API (via browser), save to CSV, and plot with Python"
@@ -316,11 +339,13 @@ Even with improvements, the system maintains a **robust fallback strategy**:
 ### When to Use Swarm vs Single Agent
 
 **Use Swarm (swarmEnabled: true) when:**
+
 - Task has distinct phases (e.g., scrape → analyze → save)
 - Need specialized tools (e.g., browser + Python)
 - Want better task organization and logging
 
 **Use Single Agent (swarmEnabled: false) when:**
+
 - Task is simple and straightforward
 - Using very small models (< 7B parameters)
 - Speed is more important than organization
@@ -351,6 +376,7 @@ Even with improvements, the system maintains a **robust fallback strategy**:
 These improvements make computer mode **significantly more reliable on small local models**, reducing fallback dependency from 65% to 12%. The system now works well on models as small as **7-9B parameters**, with even better results on 13-14B models.
 
 **Key Takeaways:**
+
 - ✅ Better prompts > larger models (for structured tasks)
 - ✅ Few-shot examples are critical for small models
 - ✅ Retry + repair dramatically improves success rates

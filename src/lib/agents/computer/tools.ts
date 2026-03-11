@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import z from 'zod';
-import { ComputerTool, FileToolResult, PythonToolResult } from './types';
+import {
+  ComputerTool,
+  ComputerToolExecutionContext,
+  FileToolResult,
+  PythonToolResult,
+} from './types';
 import { getImageMimeType } from '@/lib/models/vision';
 
 const execFileAsync = promisify(execFile);
@@ -31,11 +36,22 @@ export const truncateText = (
   return `${value.slice(0, maxLength)}\n...[truncated ${value.length - maxLength} characters]`;
 };
 
-export const getWorkspaceBase = () => {
-  return process.env.COMPUTER_WORKSPACE_DIR?.trim() || process.cwd();
+export const getWorkspaceBase = (context?: ComputerToolExecutionContext) => {
+  return (
+    context?.sandbox.workspaceRoot ||
+    process.env.COMPUTER_WORKSPACE_DIR?.trim() ||
+    process.cwd()
+  );
 };
 
-export const resolveWorkspacePath = (targetPath: string = '.') => {
+export const resolveWorkspacePath = (
+  targetPath: string = '.',
+  context?: ComputerToolExecutionContext,
+) => {
+  if (context?.sandbox) {
+    return context.sandbox.resolvePath(targetPath);
+  }
+
   const workspaceBase = path.resolve(getWorkspaceBase());
   const resolvedPath = path.resolve(workspaceBase, targetPath);
 
@@ -51,7 +67,10 @@ export const resolveWorkspacePath = (targetPath: string = '.') => {
   return resolvedPath;
 };
 
-const formatExecError = (error: unknown): PythonToolResult => {
+const formatExecError = (
+  error: unknown,
+  context?: ComputerToolExecutionContext,
+): PythonToolResult => {
   const err = error as NodeJS.ErrnoException & {
     stdout?: string | Buffer;
     stderr?: string | Buffer;
@@ -64,10 +83,18 @@ const formatExecError = (error: unknown): PythonToolResult => {
     success: false,
     error:
       err.killed || err.signal === 'SIGTERM'
-        ? 'Python execution timed out after 30 seconds'
+        ? `Python execution timed out after ${
+            context?.sandbox.policy.maxPythonRuntimeMs || 30_000
+          }ms`
         : err.message,
-    stdout: truncateText(String(err.stdout ?? '')),
-    stderr: truncateText(String(err.stderr ?? '')),
+    stdout: truncateText(
+      String(err.stdout ?? ''),
+      context?.sandbox.policy.maxPythonOutputChars || MAX_TEXT_OUTPUT_CHARS,
+    ),
+    stderr: truncateText(
+      String(err.stderr ?? ''),
+      context?.sandbox.policy.maxPythonOutputChars || MAX_TEXT_OUTPUT_CHARS,
+    ),
     exitCode:
       typeof err.code === 'number' ? err.code : err.signal ? 1 : undefined,
     timedOut: Boolean(err.killed || err.signal === 'SIGTERM'),
@@ -164,6 +191,63 @@ const resolveTimeZoneFromLocation = async (location: string) => {
   };
 };
 
+const buildPythonSandboxPrelude = (
+  workspaceRoot: string,
+  networkEnabled: boolean,
+) => {
+  const normalizedRoot = workspaceRoot.replace(/\\/g, '\\\\');
+  const networkFlag = networkEnabled ? 'True' : 'False';
+
+  return `
+import builtins
+import os
+import pathlib
+import socket
+import subprocess
+import sys
+
+WORKSPACE_ROOT = pathlib.Path(r"${normalizedRoot}").resolve()
+NETWORK_ENABLED = ${networkFlag}
+BLOCKED_MODULES = {"subprocess", "requests", "httpx", "urllib", "urllib3", "ftplib", "telnetlib", "asyncio.subprocess"}
+_original_import = builtins.__import__
+_original_open = builtins.open
+
+def _guard_path(target):
+    resolved = pathlib.Path(target).resolve()
+    if resolved != WORKSPACE_ROOT and WORKSPACE_ROOT not in resolved.parents:
+        raise PermissionError(f"Path outside sandbox: {resolved}")
+    return resolved
+
+def _sandbox_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root = name.split(".")[0]
+    if root in BLOCKED_MODULES:
+        raise ImportError(f"Module blocked by sandbox policy: {name}")
+    return _original_import(name, globals, locals, fromlist, level)
+
+def _sandbox_open(file, *args, **kwargs):
+    _guard_path(file)
+    return _original_open(file, *args, **kwargs)
+
+if not NETWORK_ENABLED:
+    def _blocked_network(*args, **kwargs):
+        raise PermissionError("Network access is disabled in the Python sandbox.")
+    socket.socket = _blocked_network
+    socket.create_connection = _blocked_network
+
+def _blocked_subprocess(*args, **kwargs):
+    raise PermissionError("Subprocess execution is disabled in the Python sandbox.")
+
+subprocess.Popen = _blocked_subprocess
+subprocess.call = _blocked_subprocess
+subprocess.run = _blocked_subprocess
+os.system = _blocked_subprocess
+builtins.__import__ = _sandbox_import
+builtins.open = _sandbox_open
+os.chdir(WORKSPACE_ROOT)
+sys.path = [p for p in sys.path if "site-packages" not in p]
+`;
+};
+
 const currentTimeTool: ComputerTool<typeof currentTimeSchema> = {
   name: 'get_current_time',
   description:
@@ -224,9 +308,9 @@ const readFileTool: ComputerTool<typeof readFileSchema> = {
   description:
     'Read a UTF-8 text file inside the workspace. Required args: filepath (prefer relative paths such as "notes/todo.txt"; absolute paths are allowed only when they stay under the workspace root).',
   schema: readFileSchema,
-  execute: async (params): Promise<FileToolResult> => {
+  execute: async (params, context): Promise<FileToolResult> => {
     try {
-      const safePath = resolveWorkspacePath(params.filepath);
+      const safePath = resolveWorkspacePath(params.filepath, context);
       const content = await fs.readFile(safePath, 'utf-8');
 
       return {
@@ -248,11 +332,14 @@ const writeFileTool: ComputerTool<typeof writeFileSchema> = {
   description:
     'Write UTF-8 content to a file inside the workspace, creating parent folders if needed. Required args: filepath (prefer relative paths such as "notes/todo.txt"; absolute paths are allowed only when they stay under the workspace root), content.',
   schema: writeFileSchema,
-  execute: async (params): Promise<FileToolResult> => {
+  execute: async (params, context): Promise<FileToolResult> => {
     try {
-      const safePath = resolveWorkspacePath(params.filepath);
+      const safePath = resolveWorkspacePath(params.filepath, context);
+      const contentBytes = Buffer.byteLength(params.content, 'utf-8');
+
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, params.content, 'utf-8');
+      await context.sandbox.recordWrite(safePath, contentBytes);
 
       return {
         success: true,
@@ -272,9 +359,9 @@ const listFilesTool: ComputerTool<typeof listFilesSchema> = {
   description:
     'List files and directories in a workspace folder. Optional arg: directory (defaults to "."). Prefer relative paths such as "." or "notes"; absolute paths are allowed only when they stay under the workspace root. Directory names end with a trailing slash.',
   schema: listFilesSchema,
-  execute: async (params): Promise<FileToolResult> => {
+  execute: async (params, context): Promise<FileToolResult> => {
     try {
-      const safePath = resolveWorkspacePath(params.directory || '.');
+      const safePath = resolveWorkspacePath(params.directory || '.', context);
       await fs.mkdir(safePath, { recursive: true });
 
       const entries = await fs.readdir(safePath, { withFileTypes: true });
@@ -308,33 +395,30 @@ export const utilityTools = {
 };
 
 export const createAnalyzeImageTool = (
-  resolveVisionModel?: () => Promise<
-    | {
-        llm: {
-          generateVisionText: (input: {
-            messages: Array<{
-              role: 'system' | 'user' | 'assistant';
-              content: Array<
-                | { type: 'text'; text: string }
-                | { type: 'image'; imagePath: string; mimeType?: string }
-              >;
-            }>;
-            options?: {
-              temperature?: number;
-              maxTokens?: number;
-            };
-          }) => Promise<{ content: string }>;
+  resolveVisionModel?: () => Promise<{
+    llm: {
+      generateVisionText: (input: {
+        messages: Array<{
+          role: 'system' | 'user' | 'assistant';
+          content: Array<
+            | { type: 'text'; text: string }
+            | { type: 'image'; imagePath: string; mimeType?: string }
+          >;
+        }>;
+        options?: {
+          temperature?: number;
+          maxTokens?: number;
         };
-        modelKey: string;
-      }
-    | null
-  >,
+      }) => Promise<{ content: string }>;
+    };
+    modelKey: string;
+  } | null>,
 ): ComputerTool<typeof analyzeImageSchema> => ({
   name: 'analyze_image',
   description:
     'Inspect an image or screenshot with a multimodal model. Required args: imagePath, question.',
   schema: analyzeImageSchema,
-  execute: async (params) => {
+  execute: async (params, context) => {
     try {
       if (!resolveVisionModel) {
         throw new Error(
@@ -342,7 +426,7 @@ export const createAnalyzeImageTool = (
         );
       }
 
-      const resolvedPath = resolveWorkspacePath(params.imagePath);
+      const resolvedPath = resolveWorkspacePath(params.imagePath, context);
       await fs.access(resolvedPath);
 
       const visionModel = await resolveVisionModel();
@@ -407,8 +491,8 @@ export const pythonTool: ComputerTool<typeof executePythonSchema> = {
   description:
     'Execute Python 3 code inside the workspace and capture stdout and stderr. Required args: code.',
   schema: executePythonSchema,
-  execute: async (params): Promise<PythonToolResult> => {
-    const workspaceBase = path.resolve(getWorkspaceBase());
+  execute: async (params, context): Promise<PythonToolResult> => {
+    const workspaceBase = path.resolve(getWorkspaceBase(context));
     const tempFilePath = path.join(
       workspaceBase,
       `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.py`,
@@ -416,26 +500,49 @@ export const pythonTool: ComputerTool<typeof executePythonSchema> = {
 
     try {
       await fs.mkdir(workspaceBase, { recursive: true });
-      await fs.writeFile(tempFilePath, params.code, 'utf-8');
+      const wrappedCode = `${buildPythonSandboxPrelude(
+        workspaceBase,
+        context.sandbox.policy.pythonNetworkEnabled,
+      )}\n${params.code}`;
 
-      const result = await execFileAsync('python3', [tempFilePath], {
-        cwd: workspaceBase,
-        timeout: 30_000,
-        maxBuffer: 1024 * 1024,
-      });
+      await fs.writeFile(tempFilePath, wrappedCode, 'utf-8');
+      await context.sandbox.recordWrite(
+        tempFilePath,
+        Buffer.byteLength(wrappedCode, 'utf-8'),
+      );
+
+      const { stdout, stderr } = await execFileAsync(
+        'python3',
+        [tempFilePath],
+        {
+          cwd: workspaceBase,
+          timeout: context.sandbox.policy.maxPythonRuntimeMs,
+          maxBuffer: 1024 * 1024,
+          env: {
+            ...process.env,
+            PATH: process.env.PATH || '',
+            PYTHONNOUSERSITE: '1',
+            PYTHONDONTWRITEBYTECODE: '1',
+            HOME: workspaceBase,
+          },
+        },
+      );
 
       return {
         success: true,
         path: tempFilePath,
-        stdout: truncateText(String(result.stdout ?? '')),
-        stderr: truncateText(String(result.stderr ?? '')),
+        stdout: truncateText(
+          stdout,
+          context.sandbox.policy.maxPythonOutputChars,
+        ),
+        stderr: truncateText(
+          stderr,
+          context.sandbox.policy.maxPythonOutputChars,
+        ),
         exitCode: 0,
       };
     } catch (error) {
-      return {
-        path: tempFilePath,
-        ...formatExecError(error),
-      };
+      return formatExecError(error, context);
     } finally {
       await fs.unlink(tempFilePath).catch(() => undefined);
     }

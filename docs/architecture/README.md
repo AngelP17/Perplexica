@@ -4,6 +4,13 @@ Perplexica is a Next.js application that combines an AI chat experience with sea
 
 For a high level flow, see [WORKING.md](WORKING.md). For deeper implementation details, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
+Focused subsystem docs:
+
+- [Retrieval](./retrieval.md)
+- [Agent Orchestration](./agent-orchestration.md)
+- [Tool Execution](./tool-execution.md)
+- [Safety Boundaries](./safety-boundaries.md)
+
 ## System Overview
 
 ```mermaid

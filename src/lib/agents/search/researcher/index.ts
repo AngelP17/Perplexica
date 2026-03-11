@@ -5,12 +5,15 @@ import SessionManager from '@/lib/session';
 import { Message, ReasoningResearchBlock } from '@/lib/types';
 import formatChatHistoryAsString from '@/lib/utils/formatHistory';
 import { ToolCall } from '@/lib/models/types';
+import { getQueryCache } from '@/lib/cache/semanticCache';
+import { postProcessSearchResults } from '../postprocess';
 
 class Researcher {
   async research(
     session: SessionManager,
     input: ResearcherInput,
   ): Promise<ResearcherOutput> {
+    let cachedResults = null as ResearcherOutput | null;
     let actionOutput: ActionOutput[] = [];
     let maxIteration =
       input.config.mode === 'speed'
@@ -43,6 +46,59 @@ class Researcher {
         subSteps: [],
       },
     });
+
+    if (input.config.embedding) {
+      try {
+        const [queryEmbedding] = await input.config.embedding.embedText([
+          input.followUp,
+        ]);
+        const cached = getQueryCache<ActionOutput[] | null>().get(
+          input.followUp,
+          queryEmbedding,
+        );
+        const cachedFindings = getQueryCache<
+          ResearcherOutput['searchFindings']
+        >().get(`${input.followUp}:sources`, queryEmbedding);
+
+        if (cachedFindings) {
+          const block = session.getBlock(researchBlockId);
+
+          if (block && block.type === 'research') {
+            block.data.subSteps.push({
+              id: crypto.randomUUID(),
+              type: 'reasoning',
+              reasoning:
+                'Reused cached research findings for a semantically similar query.',
+            });
+
+            session.updateBlock(researchBlockId, [
+              {
+                op: 'replace',
+                path: '/data/subSteps',
+                value: block.data.subSteps,
+              },
+            ]);
+          }
+
+          session.emitBlock({
+            id: crypto.randomUUID(),
+            type: 'source',
+            data: cachedFindings,
+          });
+
+          cachedResults = {
+            findings: cached || [],
+            searchFindings: cachedFindings,
+          };
+        }
+      } catch (error) {
+        console.warn('[Researcher] Semantic cache lookup failed:', error);
+      }
+    }
+
+    if (cachedResults) {
+      return cachedResults;
+    }
 
     const agentMessageHistory: Message[] = [
       {
@@ -206,15 +262,42 @@ class Researcher {
       })
       .filter((r) => r !== undefined);
 
+    const processedResults = await postProcessSearchResults({
+      query: input.followUp,
+      results: filteredSearchResults,
+      embedding: input.config.embedding,
+      maxResults: input.config.mode === 'speed' ? 8 : 15,
+    });
+
     session.emitBlock({
       id: crypto.randomUUID(),
       type: 'source',
-      data: filteredSearchResults,
+      data: processedResults,
     });
+
+    if (input.config.embedding) {
+      try {
+        const [queryEmbedding] = await input.config.embedding.embedText([
+          input.followUp,
+        ]);
+        getQueryCache<ActionOutput[] | null>().set(
+          input.followUp,
+          actionOutput,
+          queryEmbedding,
+        );
+        getQueryCache<ResearcherOutput['searchFindings']>().set(
+          `${input.followUp}:sources`,
+          processedResults,
+          queryEmbedding,
+        );
+      } catch (error) {
+        console.warn('[Researcher] Semantic cache write failed:', error);
+      }
+    }
 
     return {
       findings: actionOutput,
-      searchFindings: filteredSearchResults,
+      searchFindings: processedResults,
     };
   }
 }

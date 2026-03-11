@@ -398,7 +398,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         if (block.type === 'text') {
           let processedText = block.data;
           const citationRegex = /\[([^\]]+)\]/g;
-          const regex = /\[(\d+)\]/g;
+          const speechCitationRegex = /\[(\d+[~?!]?)(?:\s*,\s*\d+[~?!]?)*\]/g;
 
           if (processedText.includes('<think>')) {
             const openThinkTag = processedText.match(/<think>/g)?.length || 0;
@@ -444,10 +444,10 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
                 return linksHtml;
               },
             );
-            speechMessage += block.data.replace(regex, '');
+            speechMessage += block.data.replace(speechCitationRegex, '');
           } else {
-            processedText = processedText.replace(regex, '');
-            speechMessage += block.data.replace(regex, '');
+            processedText = processedText.replace(speechCitationRegex, '');
+            speechMessage += block.data.replace(speechCitationRegex, '');
           }
 
           textBlocks.push(processedText);

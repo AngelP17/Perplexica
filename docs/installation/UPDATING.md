@@ -2,6 +2,14 @@
 
 To update Perplexica to the latest version, follow these steps:
 
+```mermaid
+flowchart LR
+    Pull[Pull latest code or image] --> Install[Install dependencies or image]
+    Install --> Build[Rebuild container/app]
+    Build --> Restart[Restart Perplexica]
+    Restart --> Verify[Verify at localhost:3000]
+```
+
 ## For Docker users (Using pre-built images)
 
 Simply pull the latest image and restart your container:

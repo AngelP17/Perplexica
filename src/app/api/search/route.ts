@@ -1,70 +1,101 @@
+import { z } from 'zod';
+import APISearchAgent from '@/lib/agents/search/api';
+import { SearchSources } from '@/lib/agents/search/types';
+import { enforceRateLimit } from '@/lib/middleware/rateLimiter';
 import ModelRegistry from '@/lib/models/registry';
 import { loadRoutedChatModel } from '@/lib/models/routing';
 import { ModelWithProvider } from '@/lib/models/types';
 import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
-import { SearchSources } from '@/lib/agents/search/types';
-import APISearchAgent from '@/lib/agents/search/api';
 
-interface ChatRequestBody {
-  optimizationMode: 'speed' | 'balanced' | 'quality';
-  sources: SearchSources[];
-  chatModel: ModelWithProvider;
-  embeddingModel: ModelWithProvider;
-  query: string;
-  history: Array<[string, string]>;
-  stream?: boolean;
-  systemInstructions?: string;
-}
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const modelSchema: z.ZodType<ModelWithProvider> = z.object({
+  providerId: z.string().trim().min(1),
+  key: z.string().trim().min(1),
+});
+
+const sourceSchema = z.enum(['web', 'discussions', 'academic']);
+
+const bodySchema = z.object({
+  optimizationMode: z
+    .enum(['speed', 'balanced', 'quality'])
+    .optional()
+    .default('speed'),
+  sources: z.array(sourceSchema).min(1).default(['web']),
+  chatModel: modelSchema,
+  embeddingModel: modelSchema.optional(),
+  query: z.string().trim().min(1),
+  history: z
+    .array(z.tuple([z.string(), z.string()]))
+    .optional()
+    .default([]),
+  files: z.array(z.string()).optional().default([]),
+  stream: z.boolean().optional().default(false),
+  systemInstructions: z.string().nullable().optional().default(''),
+});
 
 export const POST = async (req: Request) => {
   try {
-    const body: ChatRequestBody = await req.json();
+    const rateLimit = enforceRateLimit(req, 'search');
+    if (!rateLimit.allowed) {
+      return rateLimit.response;
+    }
 
-    if (!body.sources || !body.query) {
+    const parsed = bodySchema.safeParse(await req.json());
+    if (!parsed.success) {
       return Response.json(
-        { message: 'Missing sources or query' },
-        { status: 400 },
+        {
+          message: 'Invalid request body',
+          error: parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        },
+        { status: 400, headers: rateLimit.headers },
       );
     }
 
-    body.history = body.history || [];
-    body.optimizationMode = body.optimizationMode || 'speed';
-    body.stream = body.stream || false;
-
+    const body = parsed.data;
     const registry = new ModelRegistry();
+    const shouldLoadEmbedding =
+      body.files.length > 0 || body.sources.length > 0;
 
-    const shouldLoadEmbedding = false;
+    if (shouldLoadEmbedding && !body.embeddingModel) {
+      return Response.json(
+        { message: 'Embedding model is required for search requests.' },
+        { status: 400, headers: rateLimit.headers },
+      );
+    }
 
-    const [chatSelection, embeddings] = await Promise.all([
+    const [chatSelection, embedding] = await Promise.all([
       loadRoutedChatModel(registry, body.chatModel, body.optimizationMode),
       shouldLoadEmbedding
         ? registry.loadEmbeddingModel(
-            body.embeddingModel.providerId,
-            body.embeddingModel.key,
+            body.embeddingModel!.providerId,
+            body.embeddingModel!.key,
           )
         : Promise.resolve(undefined),
     ]);
-    const llm = chatSelection.llm;
 
-    const history: ChatTurnMessage[] = body.history.map((msg) => {
-      return msg[0] === 'human'
-        ? { role: 'user', content: msg[1] }
-        : { role: 'assistant', content: msg[1] };
-    });
+    const history: ChatTurnMessage[] = body.history.map((entry) =>
+      entry[0] === 'human'
+        ? { role: 'user', content: entry[1] }
+        : { role: 'assistant', content: entry[1] },
+    );
 
     const session = SessionManager.createSession();
-
     const agent = new APISearchAgent();
 
     agent.searchAsync(session, {
       chatHistory: history,
       config: {
-        embedding: embeddings,
-        llm: llm,
+        embedding,
+        llm: chatSelection.llm,
         sources: body.sources,
         mode: body.optimizationMode,
-        fileIds: [],
+        fileIds: body.files,
         systemInstructions: body.systemInstructions || '',
       },
       followUp: body.query,
@@ -73,58 +104,42 @@ export const POST = async (req: Request) => {
     });
 
     if (!body.stream) {
-      return new Promise(
-        (
-          resolve: (value: Response) => void,
-          reject: (value: Response) => void,
-        ) => {
-          let message = '';
-          let sources: any[] = [];
+      return new Promise<Response>((resolve) => {
+        let message = '';
+        let sources: unknown[] = [];
 
-          session.subscribe((event: string, data: Record<string, any>) => {
-            if (event === 'data') {
-              try {
-                if (data.type === 'response') {
-                  message += data.data;
-                } else if (data.type === 'searchResults') {
-                  sources = data.data;
-                }
-              } catch (error) {
-                reject(
-                  Response.json(
-                    { message: 'Error parsing data' },
-                    { status: 500 },
-                  ),
-                );
-              }
+        session.subscribe((event, data) => {
+          if (event === 'data') {
+            if (data.type === 'response') {
+              message += data.data;
+            } else if (data.type === 'searchResults') {
+              sources = data.data;
             }
-
-            if (event === 'end') {
-              resolve(Response.json({ message, sources }, { status: 200 }));
-            }
-
-            if (event === 'error') {
-              reject(
-                Response.json(
-                  { message: 'Search error', error: data },
-                  { status: 500 },
-                ),
-              );
-            }
-          });
-        },
-      );
+          } else if (event === 'end') {
+            resolve(
+              Response.json(
+                { message, sources },
+                { status: 200, headers: rateLimit.headers },
+              ),
+            );
+          } else if (event === 'error') {
+            resolve(
+              Response.json(
+                { message: 'Search error', error: data },
+                { status: 500, headers: rateLimit.headers },
+              ),
+            );
+          }
+        });
+      });
     }
 
     const encoder = new TextEncoder();
-
     const abortController = new AbortController();
     const { signal } = abortController;
 
     const stream = new ReadableStream({
       start(controller) {
-        let sources: any[] = [];
-
         controller.enqueue(
           encoder.encode(
             JSON.stringify({
@@ -139,12 +154,14 @@ export const POST = async (req: Request) => {
 
           try {
             controller.close();
-          } catch (error) {}
+          } catch {}
         });
 
-        session.subscribe((event: string, data: Record<string, any>) => {
+        session.subscribe((event, data) => {
           if (event === 'data') {
-            if (signal.aborted) return;
+            if (signal.aborted) {
+              return;
+            }
 
             try {
               if (data.type === 'response') {
@@ -157,12 +174,11 @@ export const POST = async (req: Request) => {
                   ),
                 );
               } else if (data.type === 'searchResults') {
-                sources = data.data;
                 controller.enqueue(
                   encoder.encode(
                     JSON.stringify({
                       type: 'sources',
-                      data: sources,
+                      data: data.data,
                     }) + '\n',
                   ),
                 );
@@ -170,10 +186,10 @@ export const POST = async (req: Request) => {
             } catch (error) {
               controller.error(error);
             }
-          }
-
-          if (event === 'end') {
-            if (signal.aborted) return;
+          } else if (event === 'end') {
+            if (signal.aborted) {
+              return;
+            }
 
             controller.enqueue(
               encoder.encode(
@@ -183,10 +199,10 @@ export const POST = async (req: Request) => {
               ),
             );
             controller.close();
-          }
-
-          if (event === 'error') {
-            if (signal.aborted) return;
+          } else if (event === 'error') {
+            if (signal.aborted) {
+              return;
+            }
 
             controller.error(data);
           }
@@ -199,13 +215,14 @@ export const POST = async (req: Request) => {
 
     return new Response(stream, {
       headers: {
+        ...rateLimit.headers,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
       },
     });
-  } catch (err: any) {
-    console.error(`Error in getting search results: ${err.message}`);
+  } catch (error) {
+    console.error('Error in getting search results:', error);
     return Response.json(
       { message: 'An error has occurred.' },
       { status: 500 },

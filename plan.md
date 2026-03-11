@@ -41,55 +41,55 @@ graph TB
         SwarmToggle[Swarm Toggle]
         ChatInput[Chat Input]
     end
-    
+
     subgraph APILayer["API Layer"]
-        ChatAPI[/api/chat\]
-        ComputerAPI[/api/computer\]
+        ChatAPI["/api/chat"]
+        ComputerAPI["/api/computer"]
     end
-    
+
     subgraph SearchMode["Search Mode"]
         SearchAgent[SearchAgent]
         Classifier[Classifier]
         Researcher[Researcher]
         Widgets[Widgets]
     end
-    
+
     subgraph ComputerMode["Computer Mode"]
         ComputerAgent[ComputerAgent]
         SwarmExecutor[SwarmExecutor]
         SkillRegistry[Skill Registry]
-        
+
         subgraph Skills["Skills"]
             Planner[Planner Skill]
             Coder[Coder Skill]
             Browser[Browser Skill]
             ResearcherSkill[Researcher Skill]
         end
-        
+
         subgraph Tools["Tools"]
             FileTools[File Tools]
             PythonTool[Python Tool]
             BrowserTools[Browser Tools]
         end
     end
-    
+
     subgraph Shared["Shared Infrastructure"]
         SessionManager[SessionManager]
         Database[(Database)]
         LLM[LLM Providers]
     end
-    
+
     ModeSelector -->|search| ChatAPI
     ModeSelector -->|computer| ComputerAPI
     SwarmToggle --> ComputerAPI
     ChatInput --> ChatAPI
     ChatInput --> ComputerAPI
-    
+
     ChatAPI --> SearchAgent
     SearchAgent --> Classifier
     Classifier --> Researcher
     Classifier --> Widgets
-    
+
     ComputerAPI --> ComputerAgent
     ComputerAgent --> SwarmExecutor
     SwarmExecutor --> SkillRegistry
@@ -97,11 +97,11 @@ graph TB
     SkillRegistry --> Coder
     SkillRegistry --> Browser
     SkillRegistry --> ResearcherSkill
-    
+
     Coder --> FileTools
     Coder --> PythonTool
     Browser --> BrowserTools
-    
+
     SearchAgent --> SessionManager
     ComputerAgent --> SessionManager
     SessionManager --> Database
@@ -117,12 +117,12 @@ sequenceDiagram
     participant CA as ComputerAgent
     participant SE as SwarmExecutor
     participant S as SessionManager
-    
+
     U->>UI: Enable Swarm Mode
     U->>UI: Send task
     UI->>API: POST with swarmEnabled
     API->>CA: executeAsync()
-    
+
     alt Swarm Enabled
         CA->>SE: createSwarmPlan()
         SE->>S: emit planning substep
@@ -135,7 +135,7 @@ sequenceDiagram
     else Swarm Disabled
         CA->>SE: executeSwarm(single agent)
     end
-    
+
     SE->>S: emit final summary
     S-->>UI: stream blocks
     UI-->>U: render ComputerSteps
@@ -161,88 +161,88 @@ src/components/ComputerSteps.tsx - ComputerBlock renderer
 Detailed Implementation
 
 1. Type Definitions
-File: src/lib/types.ts (MODIFY)
+   File: src/lib/types.ts (MODIFY)
 
 Add after line 116 (after ResearchBlock definition):
 
 // Computer agent substep types
 export type PlanningComputerSubStep = {
-  id: string;
-  type: 'planning';
-  plan: string;
-  agents?: Array<{ role: string; task: string }>;
+id: string;
+type: 'planning';
+plan: string;
+agents?: Array<{ role: string; task: string }>;
 };
 
 export type ActionComputerSubStep = {
-  id: string;
-  type: 'action';
-  action: string;
-  tool: string;
-  status: 'running' | 'completed' | 'error';
+id: string;
+type: 'action';
+action: string;
+tool: string;
+status: 'running' | 'completed' | 'error';
 };
 
 export type ObservationComputerSubStep = {
-  id: string;
-  type: 'observation';
-  observation: string;
-  success: boolean;
+id: string;
+type: 'observation';
+observation: string;
+success: boolean;
 };
 
 export type ComputerBlockSubStep =
-  | PlanningComputerSubStep
-  | ActionComputerSubStep
-  | ObservationComputerSubStep;
+| PlanningComputerSubStep
+| ActionComputerSubStep
+| ObservationComputerSubStep;
 
 export type ComputerBlock = {
-  id: string;
-  type: 'computer';
-  data: {
-    subSteps: ComputerBlockSubStep[];
-  };
+id: string;
+type: 'computer';
+data: {
+subSteps: ComputerBlockSubStep[];
+};
 };
 Update Block union (line 118):
 
 export type Block =
-  | TextBlock
-  | SourceBlock
-  | SuggestionBlock
-  | WidgetBlock
-  | ResearchBlock
-  | ComputerBlock;  // ADD
+| TextBlock
+| SourceBlock
+| SuggestionBlock
+| WidgetBlock
+| ResearchBlock
+| ComputerBlock; // ADD
 Pattern: Mirrors ResearchBlock structure with substeps array.
 
 1. Computer Agent Backend
-File: src/lib/agents/computer/types.ts (CREATE)
+   File: src/lib/agents/computer/types.ts (CREATE)
 
 import { BaseLLM } from '@/lib/models/base/llm';
 import { ChatTurnMessage } from '@/lib/types';
 
 export type ComputerAgentConfig = {
-  llm: BaseLLM<any>;
-  mode: 'speed' | 'balanced' | 'quality';
-  swarmEnabled: boolean;
-  systemInstructions: string;
+llm: BaseLLM<any>;
+mode: 'speed' | 'balanced' | 'quality';
+swarmEnabled: boolean;
+systemInstructions: string;
 };
 
 export type ComputerAgentInput = {
-  chatHistory: ChatTurnMessage[];
-  task: string;
-  chatId: string;
-  messageId: string;
-  config: ComputerAgentConfig;
+chatHistory: ChatTurnMessage[];
+task: string;
+chatId: string;
+messageId: string;
+config: ComputerAgentConfig;
 };
 
 export type FileToolResult = {
-  success: boolean;
-  content?: string;
-  error?: string;
+success: boolean;
+content?: string;
+error?: string;
 };
 
 export type PythonToolResult = {
-  success: boolean;
-  stdout?: string;
-  stderr?: string;
-  error?: string;
+success: boolean;
+stdout?: string;
+stderr?: string;
+error?: string;
 };
 File: src/lib/agents/computer/tools.ts (CREATE)
 
@@ -254,70 +254,70 @@ import { FileToolResult, PythonToolResult } from './types';
 const WORKSPACE_BASE = '/home/perplexica/data/computer-workspace';
 
 export const fileTools = {
-  read_file: {
-    name: 'read_file',
-    description: 'Read contents of a file in the workspace',
-    schema: {
-      type: 'object',
-      properties: {
-        filepath: { type: 'string', description: 'Relative path within workspace' },
-      },
-      required: ['filepath'],
-    },
-    execute: async (params: { filepath: string }): Promise<FileToolResult> => {
-      try {
-        const safePath = path.join(WORKSPACE_BASE, params.filepath);
-        if (!safePath.startsWith(WORKSPACE_BASE)) {
-          throw new Error('Path traversal detected');
-        }
-        const content = await fs.readFile(safePath, 'utf-8');
-        return { success: true, content };
-      } catch (error: any) {
-        return { success: false, error: error.message };
-      }
-    },
-  },
+read_file: {
+name: 'read_file',
+description: 'Read contents of a file in the workspace',
+schema: {
+type: 'object',
+properties: {
+filepath: { type: 'string', description: 'Relative path within workspace' },
+},
+required: ['filepath'],
+},
+execute: async (params: { filepath: string }): Promise<FileToolResult> => {
+try {
+const safePath = path.join(WORKSPACE_BASE, params.filepath);
+if (!safePath.startsWith(WORKSPACE_BASE)) {
+throw new Error('Path traversal detected');
+}
+const content = await fs.readFile(safePath, 'utf-8');
+return { success: true, content };
+} catch (error: any) {
+return { success: false, error: error.message };
+}
+},
+},
 
-  write_file: {
-    name: 'write_file',
-    description: 'Write content to a file in the workspace',
-    schema: {
-      type: 'object',
-      properties: {
-        filepath: { type: 'string' },
-        content: { type: 'string' },
-      },
-      required: ['filepath', 'content'],
-    },
-    execute: async (params: { filepath: string; content: string }): Promise<FileToolResult> => {
-      try {
-        const safePath = path.join(WORKSPACE_BASE, params.filepath);
-        if (!safePath.startsWith(WORKSPACE_BASE)) {
-          throw new Error('Path traversal detected');
-        }
-        await fs.mkdir(path.dirname(safePath), { recursive: true });
-        await fs.writeFile(safePath, params.content, 'utf-8');
-        return { success: true };
-      } catch (error: any) {
-        return { success: false, error: error.message };
-      }
-    },
-  },
+write_file: {
+name: 'write_file',
+description: 'Write content to a file in the workspace',
+schema: {
+type: 'object',
+properties: {
+filepath: { type: 'string' },
+content: { type: 'string' },
+},
+required: ['filepath', 'content'],
+},
+execute: async (params: { filepath: string; content: string }): Promise<FileToolResult> => {
+try {
+const safePath = path.join(WORKSPACE_BASE, params.filepath);
+if (!safePath.startsWith(WORKSPACE_BASE)) {
+throw new Error('Path traversal detected');
+}
+await fs.mkdir(path.dirname(safePath), { recursive: true });
+await fs.writeFile(safePath, params.content, 'utf-8');
+return { success: true };
+} catch (error: any) {
+return { success: false, error: error.message };
+}
+},
+},
 
-  list_files: {
-    name: 'list_files',
-    description: 'List files in workspace directory',
-    schema: {
-      type: 'object',
-      properties: {
-        directory: { type: 'string', description: 'Directory path (optional)' },
-      },
-    },
-    execute: async (params: { directory?: string }): Promise<FileToolResult> => {
-      try {
-        const targetDir = params.directory
-          ? path.join(WORKSPACE_BASE, params.directory)
-          : WORKSPACE_BASE;
+list_files: {
+name: 'list_files',
+description: 'List files in workspace directory',
+schema: {
+type: 'object',
+properties: {
+directory: { type: 'string', description: 'Directory path (optional)' },
+},
+},
+execute: async (params: { directory?: string }): Promise<FileToolResult> => {
+try {
+const targetDir = params.directory
+? path.join(WORKSPACE_BASE, params.directory)
+: WORKSPACE_BASE;
 
         if (!targetDir.startsWith(WORKSPACE_BASE)) {
           throw new Error('Path traversal detected');
@@ -330,22 +330,23 @@ export const fileTools = {
         return { success: false, error: error.message };
       }
     },
-  },
+
+},
 };
 
 export const pythonTool = {
-  name: 'execute_python',
-  description: 'Execute Python code and return output',
-  schema: {
-    type: 'object',
-    properties: {
-      code: { type: 'string', description: 'Python code to execute' },
-    },
-    required: ['code'],
-  },
-  execute: async (params: { code: string }): Promise<PythonToolResult> => {
-    return new Promise((resolve) => {
-      const tempFile = path.join(WORKSPACE_BASE, `temp_${Date.now()}.py`);
+name: 'execute*python',
+description: 'Execute Python code and return output',
+schema: {
+type: 'object',
+properties: {
+code: { type: 'string', description: 'Python code to execute' },
+},
+required: ['code'],
+},
+execute: async (params: { code: string }): Promise<PythonToolResult> => {
+return new Promise((resolve) => {
+const tempFile = path.join(WORKSPACE_BASE, `temp*${Date.now()}.py`);
 
       fs.mkdir(WORKSPACE_BASE, { recursive: true })
         .then(() => fs.writeFile(tempFile, params.code, 'utf-8'))
@@ -379,7 +380,8 @@ export const pythonTool = {
           resolve({ success: false, error: err.message });
         });
     });
-  },
+
+},
 };
 Security: Path traversal protection, 30s timeout for Python, workspace isolation.
 
@@ -389,24 +391,24 @@ import { fileTools, pythonTool } from '../tools';
 import { browserSkill } from './browserSkill';
 
 export type Skill = {
-  name: string;
-  description: string;
-  role: string;
-  tools: string[];
-  systemPrompt: string;
-  model?: string; // Optional specific model (e.g., "qwen2.5-coder:14b" for coding)
+name: string;
+description: string;
+role: string;
+tools: string[];
+systemPrompt: string;
+model?: string; // Optional specific model (e.g., "qwen2.5-coder:14b" for coding)
 };
 
 export type SkillRegistry = Record<string, Skill>;
 
 // CoPaw-inspired skill registry with specialized sub-agents
 export const skillRegistry: SkillRegistry = {
-  planner: {
-    name: 'planner',
-    description: 'Plans and decomposes tasks into specialized sub-agent roles',
-    role: 'Task Planner',
-    tools: [],
-    systemPrompt: `You are a task planning specialist. Break down complex tasks into specialized roles.
+planner: {
+name: 'planner',
+description: 'Plans and decomposes tasks into specialized sub-agent roles',
+role: 'Task Planner',
+tools: [],
+systemPrompt: `You are a task planning specialist. Break down complex tasks into specialized roles.
 
 For each task, identify:
 
@@ -416,23 +418,23 @@ For each task, identify:
 
 Output JSON format:
 {
-  "plan": "Brief summary of approach",
-  "agents": [
-    { "role": "RoleName", "task": "Specific task description", "tools": ["tool1", "tool2"] }
-  ]
+"plan": "Brief summary of approach",
+"agents": [
+{ "role": "RoleName", "task": "Specific task description", "tools": ["tool1", "tool2"] }
+]
 }
 
 Available roles: planner, coder, researcher, browser
 Available tools: read_file, write_file, list_files, execute_python, browser_navigate, browser_click, browser_type, browser_screenshot, browser_scrape`,
-  },
+},
 
-  coder: {
-    name: 'coder',
-    description: 'Writes and executes code (Python, scripts, data processing)',
-    role: 'Code Writer & Executor',
-    tools: ['write_file', 'read_file', 'execute_python'],
-    model: 'qwen2.5-coder:14b', // Prefer coding-specific model
-    systemPrompt: `You are an expert programmer. You write clean, efficient code.
+coder: {
+name: 'coder',
+description: 'Writes and executes code (Python, scripts, data processing)',
+role: 'Code Writer & Executor',
+tools: ['write_file', 'read_file', 'execute_python'],
+model: 'qwen2.5-coder:14b', // Prefer coding-specific model
+systemPrompt: `You are an expert programmer. You write clean, efficient code.
 
 When given a coding task:
 
@@ -450,14 +452,14 @@ Best practices:
 - Test code before considering task complete
 
 Tools available: write_file, read_file, execute_python`,
-  },
+},
 
-  researcher: {
-    name: 'researcher',
-    description: 'Researches information, analyzes data, validates facts',
-    role: 'Research Analyst',
-    tools: ['read_file', 'list_files'],
-    systemPrompt: `You are a research analyst. You gather, analyze, and synthesize information.
+researcher: {
+name: 'researcher',
+description: 'Researches information, analyzes data, validates facts',
+role: 'Research Analyst',
+tools: ['read_file', 'list_files'],
+systemPrompt: `You are a research analyst. You gather, analyze, and synthesize information.
 
 When researching:
 
@@ -469,14 +471,14 @@ When researching:
 Tools available: read_file, list_files
 
 Note: For web research, coordinate with the browser agent.`,
-  },
+},
 
-  browser: {
-    name: 'browser',
-    description: 'Automates web browsing (navigation, scraping, form filling, screenshots)',
-    role: 'Browser Automation Specialist',
-    tools: ['browser_navigate', 'browser_click', 'browser_type', 'browser_screenshot', 'browser_scrape'],
-    systemPrompt: `You are a browser automation specialist using Playwright.
+browser: {
+name: 'browser',
+description: 'Automates web browsing (navigation, scraping, form filling, screenshots)',
+role: 'Browser Automation Specialist',
+tools: ['browser_navigate', 'browser_click', 'browser_type', 'browser_screenshot', 'browser_scrape'],
+systemPrompt: `You are a browser automation specialist using Playwright.
 
 Capabilities:
 
@@ -497,36 +499,36 @@ When automating:
 Tools available: browser_navigate, browser_click, browser_type, browser_screenshot, browser_scrape
 
 Always be explicit about selectors and wait for page loads.`,
-  },
+},
 };
 
 // Get all available tools from all skills
 export const getAllTools = () => {
-  const toolMap = new Map();
+const toolMap = new Map();
 
-  // File tools
-  Object.values(fileTools).forEach(tool => {
-    toolMap.set(tool.name, tool);
-  });
+// File tools
+Object.values(fileTools).forEach(tool => {
+toolMap.set(tool.name, tool);
+});
 
-  // Python tool
-  toolMap.set(pythonTool.name, pythonTool);
+// Python tool
+toolMap.set(pythonTool.name, pythonTool);
 
-  // Browser tools
-  Object.values(browserSkill.tools).forEach(tool => {
-    toolMap.set(tool.name, tool);
-  });
+// Browser tools
+Object.values(browserSkill.tools).forEach(tool => {
+toolMap.set(tool.name, tool);
+});
 
-  return toolMap;
+return toolMap;
 };
 
 // Get tools for specific skill
 export const getSkillTools = (skillName: string) => {
-  const skill = skillRegistry[skillName];
-  if (!skill) return [];
+const skill = skillRegistry[skillName];
+if (!skill) return [];
 
-  const allTools = getAllTools();
-  return skill.tools.map(toolName => allTools.get(toolName)).filter(Boolean);
+const allTools = getAllTools();
+return skill.tools.map(toolName => allTools.get(toolName)).filter(Boolean);
 };
 Pattern: CoPaw-style modular skill system. Each skill is a specialized sub-agent with:
 
@@ -539,29 +541,29 @@ File: src/lib/agents/computer/skills/browserSkill.ts (CREATE) - Playwright Brows
 import { chromium, Browser, Page } from 'playwright';
 
 type BrowserToolResult = {
-  success: boolean;
-  data?: any;
-  error?: string;
-  screenshot?: string; // Base64 encoded
+success: boolean;
+data?: any;
+error?: string;
+screenshot?: string; // Base64 encoded
 };
 
 // Singleton browser instance manager (CoPaw pattern)
 class BrowserManager {
-  private static instance: BrowserManager;
-  private browser: Browser | null = null;
-  private page: Page | null = null;
-  private lastActivity: number = Date.now();
-  private readonly TIMEOUT = 5 *60* 1000; // 5 min idle timeout
+private static instance: BrowserManager;
+private browser: Browser | null = null;
+private page: Page | null = null;
+private lastActivity: number = Date.now();
+private readonly TIMEOUT = 5 _60_ 1000; // 5 min idle timeout
 
-  static getInstance(): BrowserManager {
-    if (!BrowserManager.instance) {
-      BrowserManager.instance = new BrowserManager();
-    }
-    return BrowserManager.instance;
-  }
+static getInstance(): BrowserManager {
+if (!BrowserManager.instance) {
+BrowserManager.instance = new BrowserManager();
+}
+return BrowserManager.instance;
+}
 
-  async getPage(): Promise<Page> {
-    this.lastActivity = Date.now();
+async getPage(): Promise<Page> {
+this.lastActivity = Date.now();
 
     if (!this.browser || !this.browser.isConnected()) {
       this.browser = await chromium.launch({
@@ -579,54 +581,55 @@ class BrowserManager {
     }
 
     return this.page;
-  }
 
-  async cleanup() {
-    if (this.page) {
-      await this.page.close().catch(() => {});
-      this.page = null;
-    }
-    if (this.browser) {
-      await this.browser.close().catch(() => {});
-      this.browser = null;
-    }
-  }
+}
 
-  // Auto-cleanup on idle
-  startIdleTimer() {
-    setInterval(async () => {
-      if (Date.now() - this.lastActivity > this.TIMEOUT && this.browser) {
-        console.log('[BrowserManager] Cleaning up idle browser');
-        await this.cleanup();
-      }
-    }, 60000); // Check every minute
-  }
+async cleanup() {
+if (this.page) {
+await this.page.close().catch(() => {});
+this.page = null;
+}
+if (this.browser) {
+await this.browser.close().catch(() => {});
+this.browser = null;
+}
+}
+
+// Auto-cleanup on idle
+startIdleTimer() {
+setInterval(async () => {
+if (Date.now() - this.lastActivity > this.TIMEOUT && this.browser) {
+console.log('[BrowserManager] Cleaning up idle browser');
+await this.cleanup();
+}
+}, 60000); // Check every minute
+}
 }
 
 // Initialize idle cleanup
 BrowserManager.getInstance().startIdleTimer();
 
 export const browserSkill = {
-  tools: {
-    browser_navigate: {
-      name: 'browser_navigate',
-      description: 'Navigate to a URL and wait for page load',
-      schema: {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'Full URL to navigate to' },
-          waitUntil: {
-            type: 'string',
-            enum: ['load', 'domcontentloaded', 'networkidle'],
-            description: 'Wait condition (default: load)',
-          },
-        },
-        required: ['url'],
-      },
-      execute: async (params: { url: string; waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' }): Promise<BrowserToolResult> => {
-        try {
-          const manager = BrowserManager.getInstance();
-          const page = await manager.getPage();
+tools: {
+browser_navigate: {
+name: 'browser_navigate',
+description: 'Navigate to a URL and wait for page load',
+schema: {
+type: 'object',
+properties: {
+url: { type: 'string', description: 'Full URL to navigate to' },
+waitUntil: {
+type: 'string',
+enum: ['load', 'domcontentloaded', 'networkidle'],
+description: 'Wait condition (default: load)',
+},
+},
+required: ['url'],
+},
+execute: async (params: { url: string; waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' }): Promise<BrowserToolResult> => {
+try {
+const manager = BrowserManager.getInstance();
+const page = await manager.getPage();
 
           await page.goto(params.url, {
             waitUntil: params.waitUntil || 'load',
@@ -764,7 +767,8 @@ export const browserSkill = {
         }
       },
     },
-  },
+
+},
 };
 Pattern:
 
@@ -780,26 +784,26 @@ import { ComputerBlock } from '@/lib/types';
 import { skillRegistry, getSkillTools } from './skills/registry';
 
 type SwarmPlan = {
-  plan: string;
-  agents: Array<{
-    role: string;
-    task: string;
-    tools?: string[];
-  }>;
+plan: string;
+agents: Array<{
+role: string;
+task: string;
+tools?: string[];
+}>;
 };
 
 export class SwarmExecutor {
-  /**
+/\*\*
 
 - CoPaw-inspired swarm planning: Break task into specialized sub-agents
-   */
+  \*/
   static async createSwarmPlan(
-    input: ComputerAgentInput,
-    session: SessionManager,
-    blockId: string,
+  input: ComputerAgentInput,
+  session: SessionManager,
+  blockId: string,
   ): Promise<SwarmPlan> {
-    try {
-      const plannerSkill = skillRegistry.planner;
+  try {
+  const plannerSkill = skillRegistry.planner;
 
       const response = await input.config.llm.generateText({
         messages: [
@@ -824,49 +828,50 @@ export class SwarmExecutor {
       ]);
 
       return plan;
-    } catch (error: any) {
-      console.error('[SwarmExecutor] Planning failed:', error);
-      // Fallback to single-agent execution
-      return {
-        plan: 'Execute task directly',
-        agents: [{ role: 'coder', task: input.task }],
-      };
-    }
+
+  } catch (error: any) {
+  console.error('[SwarmExecutor] Planning failed:', error);
+  // Fallback to single-agent execution
+  return {
+  plan: 'Execute task directly',
+  agents: [{ role: 'coder', task: input.task }],
+  };
+  }
   }
 
-  /**
+  /\*\*
 
 - Execute a single sub-agent (real execution, not simulation)
-   */
+  \*/
   static async executeSubAgent(
-    agent: { role: string; task: string },
-    input: ComputerAgentInput,
-    session: SessionManager,
-    blockId: string,
-    conversationHistory: any[],
+  agent: { role: string; task: string },
+  input: ComputerAgentInput,
+  session: SessionManager,
+  blockId: string,
+  conversationHistory: any[],
   ): Promise<void> {
-    const skill = skillRegistry[agent.role];
-    if (!skill) {
-      console.error(`[SwarmExecutor] Unknown skill: ${agent.role}`);
-      return;
-    }
+  const skill = skillRegistry[agent.role];
+  if (!skill) {
+  console.error(`[SwarmExecutor] Unknown skill: ${agent.role}`);
+  return;
+  }
 
-    const tools = getSkillTools(agent.role);
-    const maxIterations = input.config.mode === 'speed' ? 3 : 5;
+  const tools = getSkillTools(agent.role);
+  const maxIterations = input.config.mode === 'speed' ? 3 : 5;
 
-    // Build context for this sub-agent
-    const messages = [
-      { role: 'system', content: skill.systemPrompt },
-      ...conversationHistory,
-      { role: 'user', content: `Your specific task: ${agent.task}` },
-    ];
+  // Build context for this sub-agent
+  const messages = [
+  { role: 'system', content: skill.systemPrompt },
+  ...conversationHistory,
+  { role: 'user', content: `Your specific task: ${agent.task}` },
+  ];
 
-    // Sub-agent execution loop
-    for (let i = 0; i < maxIterations; i++) {
-      const stream = input.config.llm.streamText({
-        messages,
-        tools,
-      });
+  // Sub-agent execution loop
+  for (let i = 0; i < maxIterations; i++) {
+  const stream = input.config.llm.streamText({
+  messages,
+  tools,
+  });
 
       let toolCalls: any[] = [];
       let assistantText = '';
@@ -958,43 +963,45 @@ export class SwarmExecutor {
           content: JSON.stringify(result),
         });
       }
-    }
+
+  }
   }
 
-  /**
+  /\*\*
 
 - Execute swarm: sequential sub-agent execution (M4 optimized - one model at a time)
-   */
+  \*/
   static async executeSwarm(
-    plan: SwarmPlan,
-    input: ComputerAgentInput,
-    session: SessionManager,
-    blockId: string,
+  plan: SwarmPlan,
+  input: ComputerAgentInput,
+  session: SessionManager,
+  blockId: string,
   ): Promise<void> {
-    const conversationHistory: any[] = [];
+  const conversationHistory: any[] = [];
 
-    // Sequential execution (optimized for M4 - one model loaded at a time)
-    for (const agent of plan.agents) {
-      console.log(`[SwarmExecutor] Executing sub-agent: ${agent.role}`);
-      await this.executeSubAgent(agent, input, session, blockId, conversationHistory);
-    }
+      // Sequential execution (optimized for M4 - one model loaded at a time)
+      for (const agent of plan.agents) {
+        console.log(`[SwarmExecutor] Executing sub-agent: ${agent.role}`);
+        await this.executeSubAgent(agent, input, session, blockId, conversationHistory);
+      }
 
-    // Generate final summary
-    const summaryResponse = await input.config.llm.generateText({
-      messages: [
-        { role: 'system', content: 'Summarize what was accomplished in 2-3 sentences.' },
-        ...conversationHistory,
-      ],
-    });
+      // Generate final summary
+      const summaryResponse = await input.config.llm.generateText({
+        messages: [
+          { role: 'system', content: 'Summarize what was accomplished in 2-3 sentences.' },
+          ...conversationHistory,
+        ],
+      });
 
-    session.emitBlock({
-      id: crypto.randomUUID(),
-      type: 'text',
-      data: summaryResponse.text,
-    });
+      session.emitBlock({
+        id: crypto.randomUUID(),
+        type: 'text',
+        data: summaryResponse.text,
+      });
+
   }
-}
-Pattern:
+  }
+  Pattern:
 
 Real sub-agents (not virtual/simulated)
 Each sub-agent has isolated tools and specialized prompt
@@ -1004,7 +1011,7 @@ CoPaw-inspired orchestration pattern
 File: src/lib/agents/computer/prompts.ts (CREATE)
 
 export const getComputerAgentPrompt = (swarmEnabled: boolean, mode: string) => {
-  const basePrompt = `You are a computer agent that can execute tasks using file operations and Python code.
+const basePrompt = `You are a computer agent that can execute tasks using file operations and Python code.
 
 Available tools:
 
@@ -1022,7 +1029,7 @@ Process:
 
 All file operations are within the workspace directory.`;
 
-  const swarmAddition = swarmEnabled ? `
+const swarmAddition = swarmEnabled ? `
 
 SWARM PLANNING MODE:
 Before executing, break down complex tasks into specialized sub-agents:
@@ -1039,17 +1046,17 @@ Agents:
 2. CodeWriter: Write matplotlib visualization code
 3. Executor: Run code and verify output` : '';
 
-  return basePrompt + swarmAddition;
+return basePrompt + swarmAddition;
 };
 
 export const getSwarmPlanningPrompt = () => {
-  return `You are a task decomposition specialist. Break down the user's task into specialized roles.
+return `You are a task decomposition specialist. Break down the user's task into specialized roles.
 
 Output format (JSON):
 {
-  "agents": [
-    { "role": "RoleName", "task": "Specific task description" }
-  ]
+"agents": [
+{ "role": "RoleName", "task": "Specific task description" }
+]
 }
 
 Roles should be distinct and cover the full task scope.`;
@@ -1065,14 +1072,14 @@ import { and, eq } from 'drizzle-orm';
 import { ComputerBlock } from '@/lib/types';
 
 class ComputerAgent {
-  async executeAsync(session: SessionManager, input: ComputerAgentInput) {
-    // Create message row with 'answering' status (matches SearchAgent pattern)
-    const exists = await db.query.messages.findFirst({
-      where: and(
-        eq(messages.chatId, input.chatId),
-        eq(messages.messageId, input.messageId),
-      ),
-    });
+async executeAsync(session: SessionManager, input: ComputerAgentInput) {
+// Create message row with 'answering' status (matches SearchAgent pattern)
+const exists = await db.query.messages.findFirst({
+where: and(
+eq(messages.chatId, input.chatId),
+eq(messages.messageId, input.messageId),
+),
+});
 
     if (!exists) {
       await db.insert(messages).values({
@@ -1145,14 +1152,15 @@ class ComputerAgent {
         )
         .execute();
     }
-  }
+
+}
 }
 
 export default ComputerAgent;
 Pattern: Now uses CoPaw SwarmExecutor for real sub-agent orchestration. Much simpler than original - complexity moved to swarmExecutor.ts module.
 
 1. API Endpoint
-File: src/app/api/computer/route.ts (CREATE)
+   File: src/app/api/computer/route.ts (CREATE)
 
 Copy structure from /api/chat/route.ts with these changes:
 
@@ -1176,24 +1184,23 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
-  message: z.object({
-    messageId: z.string().min(1),
-    chatId: z.string().min(1),
-    content: z.string().min(1),
-  }),
-  optimizationMode: z.enum(['speed', 'balanced', 'quality']),
-  swarmEnabled: z.boolean().default(false),
-  history: z.array(z.tuple([z.string(), z.string()])).default([]),
-  chatModel: z.object({
-    providerId: z.string(),
-    key: z.string(),
-  }),
-  systemInstructions: z.string().nullable().optional().default(''),
+message: z.object({
+messageId: z.string().min(1),
+chatId: z.string().min(1),
+content: z.string().min(1),
+}),
+optimizationMode: z.enum(['speed', 'balanced', 'quality']),
+swarmEnabled: z.boolean().default(false),
+history: z.array(z.tuple([z.string(), z.string()])).default([]),
+chatModel: z.object({
+providerId: z.string(),
+key: z.string(),
+}),
+systemInstructions: z.string().nullable().optional().default(''),
 });
 
 // Same ensureChatExists and streaming logic as /api/chat
-// Call: agent.executeAsync(session, { chatHistory, task: message.content, chatId, messageId, config })
-4. Frontend Mode Switching
+// Call: agent.executeAsync(session, { chatHistory, task: message.content, chatId, messageId, config }) 4. Frontend Mode Switching
 File: src/lib/hooks/useChat.tsx (MODIFY)
 
 Add to ChatContext type (around line 39):
@@ -1215,35 +1222,35 @@ setSwarmEnabled(savedSwarm);
 Wrap setters to persist:
 
 const handleSetInteractionMode = (mode: 'search' | 'computer') => {
-  setInteractionMode(mode);
-  localStorage.setItem('interactionMode', mode);
+setInteractionMode(mode);
+localStorage.setItem('interactionMode', mode);
 };
 
 const handleSetSwarmEnabled = (enabled: boolean) => {
-  setSwarmEnabled(enabled);
-  localStorage.setItem('swarm', String(enabled));
+setSwarmEnabled(enabled);
+localStorage.setItem('swarm', String(enabled));
 };
 Modify sendMessage fetch (line 745):
 
 const res = await fetch(
-  interactionMode === 'computer' ? '/api/computer' : '/api/chat',
-  {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      content: message,
-      message: { messageId, chatId: chatId!, content: message },
-      chatId: chatId!,
-      files: interactionMode === 'search' ? fileIds : undefined,
-      sources: interactionMode === 'search' ? sources : undefined,
-      optimizationMode,
-      swarmEnabled: interactionMode === 'computer' ? swarmEnabled : undefined,
-      history: /*same as before*/,
-      chatModel: { key: chatModelProvider.key, providerId: chatModelProvider.providerId },
-      embeddingModel: interactionMode === 'search' ? { key: embeddingModelProvider.key, providerId: embeddingModelProvider.providerId } : undefined,
-      systemInstructions: localStorage.getItem('systemInstructions'),
-    }),
-  },
+interactionMode === 'computer' ? '/api/computer' : '/api/chat',
+{
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+content: message,
+message: { messageId, chatId: chatId!, content: message },
+chatId: chatId!,
+files: interactionMode === 'search' ? fileIds : undefined,
+sources: interactionMode === 'search' ? sources : undefined,
+optimizationMode,
+swarmEnabled: interactionMode === 'computer' ? swarmEnabled : undefined,
+history: /_same as before_/,
+chatModel: { key: chatModelProvider.key, providerId: chatModelProvider.providerId },
+embeddingModel: interactionMode === 'search' ? { key: embeddingModelProvider.key, providerId: embeddingModelProvider.providerId } : undefined,
+systemInstructions: localStorage.getItem('systemInstructions'),
+}),
+},
 );
 Add to Provider value (line 809):
 
@@ -1265,25 +1272,24 @@ import { cn } from '@/lib/utils';
 import { useChat } from '@/lib/hooks/useChat';
 
 const SwarmToggle = () => {
-  const { interactionMode, swarmEnabled, setSwarmEnabled } = useChat();
+const { interactionMode, swarmEnabled, setSwarmEnabled } = useChat();
 
-  if (interactionMode !== 'computer') return null;
+if (interactionMode !== 'computer') return null;
 
-  return (
-    <button
-      type="button"
-      onClick={() => setSwarmEnabled(!swarmEnabled)}
-      className={cn(
-        'p-2 rounded-xl transition duration-200',
-        swarmEnabled
-          ? 'bg-sky-500/20 text-sky-500'
-          : 'text-black/50 dark:text-white/50 hover:bg-light-secondary dark:hover:bg-dark-secondary',
-      )}
-      title={swarmEnabled ? 'Swarm enabled' : 'Swarm disabled'}
-    >
-      <Users size={16} />
-    </button>
-  );
+return (
+<button
+type="button"
+onClick={() => setSwarmEnabled(!swarmEnabled)}
+className={cn(
+'p-2 rounded-xl transition duration-200',
+swarmEnabled
+? 'bg-sky-500/20 text-sky-500'
+: 'text-black/50 dark:text-white/50 hover:bg-light-secondary dark:hover:bg-dark-secondary',
+)}
+title={swarmEnabled ? 'Swarm enabled' : 'Swarm disabled'} >
+<Users size={16} />
+</button>
+);
 };
 
 export default SwarmToggle;
@@ -1331,19 +1337,19 @@ import { ComputerBlock } from '@/lib/types';
 Around line 144 (after ResearchBlock rendering), add:
 
 {section.message.responseBlocks
-  .filter(
-    (block): block is ComputerBlock =>
-      block.type === 'computer' && block.data.subSteps.length > 0,
-  )
-  .map((computerBlock) => (
-    <div key={computerBlock.id} className="flex flex-col space-y-2">
-      <ComputerSteps
+.filter(
+(block): block is ComputerBlock =>
+block.type === 'computer' && block.data.subSteps.length > 0,
+)
+.map((computerBlock) => (
+<div key={computerBlock.id} className="flex flex-col space-y-2">
+<ComputerSteps
         block={computerBlock}
         status={section.message.status}
         isLast={isLast}
       />
-    </div>
-  ))}
+</div>
+))}
 Verification Plan
 
 1. Mode Switching Test
@@ -1358,23 +1364,19 @@ Verification Plan
 
 // Set mode to Computer
 // Task: "Create a file called test.txt with 'Hello World'"
-// Verify: ComputerBlock appears with action/observation substeps
-3. Swarm Planning Test
+// Verify: ComputerBlock appears with action/observation substeps 3. Swarm Planning Test
 
 // Enable swarm toggle (only visible in Computer mode)
 // Task: "Analyze CSV with sales data and create visualization"
-// Verify: Planning substep shows agent roles (DataAnalyst, CodeWriter, etc.)
-4. File Operations
+// Verify: Planning substep shows agent roles (DataAnalyst, CodeWriter, etc.) 4. File Operations
 
 // Task: "List files in workspace"
 // Task: "Write a Python script for fibonacci"
-// Task: "Read the script back"
-5. Python Execution
+// Task: "Read the script back" 5. Python Execution
 
 // Task: "Execute Python code to print first 10 prime numbers"
 // Verify: stdout appears in observation
-// Test error: "Execute invalid Python syntax" → verify error handling
-6. Database Persistence
+// Test error: "Execute invalid Python syntax" → verify error handling 6. Database Persistence
 
 # Execute computer task
 
@@ -1389,21 +1391,19 @@ Verification Plan
 // Enable swarm mode
 // Task: "Navigate to example.com, take a screenshot, and scrape the main heading"
 // Verify:
-//   - Planning substep shows browser agent role
-//   - browser_navigate action completes
-//   - browser_screenshot returns base64 image
-//   - browser_scrape extracts text
-//   - Observation shows scraped content
-8. Real Sub-Agent Test (CoPaw Feature)
+// - Planning substep shows browser agent role
+// - browser_navigate action completes
+// - browser_screenshot returns base64 image
+// - browser_scrape extracts text
+// - Observation shows scraped content 8. Real Sub-Agent Test (CoPaw Feature)
 
 // Enable swarm mode
 // Task: "Create a Python script to analyze data.csv, then run it"
 // Verify:
-//   - Planning shows multiple agents (planner, coder)
-//   - Coder agent uses write_file to create script
-//   - Coder agent uses execute_python to run script
-//   - Observation shows output from each sub-agent
-9. Search Mode Regression
+// - Planning shows multiple agents (planner, coder)
+// - Coder agent uses write_file to create script
+// - Coder agent uses execute_python to run script
+// - Observation shows output from each sub-agent 9. Search Mode Regression
 
 // Switch to Search mode
 // Query: "What is quantum computing?"
@@ -1412,9 +1412,9 @@ Critical Dependencies
 NPM Packages (add to package.json):
 
 {
-  "dependencies": {
-    "playwright": "^1.41.0"
-  }
+"dependencies": {
+"playwright": "^1.41.0"
+}
 }
 Docker Configuration (update Dockerfile or install in container):
 

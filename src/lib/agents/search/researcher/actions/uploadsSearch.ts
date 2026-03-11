@@ -64,6 +64,8 @@ const uploadsSearchAction: ResearchAction<typeof schema> = {
 
     const filteredSearchResults = results
       .map((result, index) => {
+        result.metadata.sourceType = 'document';
+
         if (result.metadata.url && !seenIds.has(result.metadata.url)) {
           seenIds.set(result.metadata.url, index);
           return result;

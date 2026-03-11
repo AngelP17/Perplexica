@@ -1,0 +1,181 @@
+{
+  "queries": [
+    {
+      "id": "renewable-grid-2026",
+      "query": "What changed in renewable grid storage in 2026 and what are the tradeoffs?",
+      "goldAspects": ["storage", "grid", "tradeoffs", "2026"],
+      "chunks": [
+        {
+          "content": "Grid-scale battery projects in 2026 focused on four-hour lithium iron phosphate systems, hybrid solar-plus-storage deployments, and interconnection queue reforms. Utilities reported lower curtailment but raised concerns about transformer bottlenecks and fire-safety permitting.",
+          "metadata": {
+            "title": "2026 grid storage outlook",
+            "url": "https://energy.example.com/grid-storage-2026",
+            "lexicalScore": 0.93,
+            "vectorScore": 0.88,
+            "authorityScore": 0.66,
+            "recencyScore": 0.98,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "A market brief compared long-duration storage pilots against lithium iron phosphate systems. Long-duration assets improved seasonal balancing, while LFP still won on cost, bankability, and deployment speed.",
+          "metadata": {
+            "title": "Long-duration storage pilots",
+            "url": "https://research.example.org/storage-pilots",
+            "lexicalScore": 0.71,
+            "vectorScore": 0.84,
+            "authorityScore": 0.7,
+            "recencyScore": 0.86,
+            "sourceType": "academic"
+          },
+          "label": 1
+        },
+        {
+          "content": "Homepage. Login. About. Subscribe. Contact. Cookie settings. Privacy policy.",
+          "metadata": {
+            "title": "Energy site navigation",
+            "url": "https://energy.example.com/nav",
+            "lexicalScore": 0.1,
+            "vectorScore": 0.12,
+            "authorityScore": 0.4,
+            "recencyScore": 0.5,
+            "sourceType": "web"
+          },
+          "label": 0
+        },
+        {
+          "content": "Distribution operators warned that grid storage helps peak shaving, but substation upgrade timelines and land-use rules slowed the highest-value projects.",
+          "metadata": {
+            "title": "Substation constraints",
+            "url": "https://utility.example.net/substation-constraints",
+            "lexicalScore": 0.77,
+            "vectorScore": 0.72,
+            "authorityScore": 0.52,
+            "recencyScore": 0.9,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "An unrelated consumer battery review discussed home backup systems and phone charging performance.",
+          "metadata": {
+            "title": "Home battery gadget review",
+            "url": "https://gadgets.example.com/home-battery-review",
+            "lexicalScore": 0.45,
+            "vectorScore": 0.31,
+            "authorityScore": 0.35,
+            "recencyScore": 0.73,
+            "sourceType": "web"
+          },
+          "label": 0
+        }
+      ]
+    },
+    {
+      "id": "nextjs-cache-components",
+      "query": "How do Next.js cache components affect data fetching and dynamic boundaries?",
+      "goldAspects": ["cache", "data", "dynamic", "boundaries"],
+      "chunks": [
+        {
+          "content": "Cache Components let developers mark cacheable work while keeping dynamic boundaries explicit. Data fetching can remain inside server components, but dynamic reads such as cookies or headers must stay outside cached regions.",
+          "metadata": {
+            "title": "Cache Components overview",
+            "url": "https://next.example.dev/cache-components",
+            "lexicalScore": 0.95,
+            "vectorScore": 0.92,
+            "authorityScore": 1,
+            "recencyScore": 0.96,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "A migration guide shows how cache scopes reduce request waterfalls and let streaming boundaries remain dynamic where personalization is required.",
+          "metadata": {
+            "title": "Migration guide for caching",
+            "url": "https://docs.example.dev/cache-migration",
+            "lexicalScore": 0.86,
+            "vectorScore": 0.83,
+            "authorityScore": 0.9,
+            "recencyScore": 0.9,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "Cache invalidation commands can tag cached payloads and selectively refresh static work without forcing the entire route dynamic.",
+          "metadata": {
+            "title": "Cache invalidation tags",
+            "url": "https://docs.example.dev/cache-tags",
+            "lexicalScore": 0.76,
+            "vectorScore": 0.81,
+            "authorityScore": 0.9,
+            "recencyScore": 0.88,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "A CSS tutorial showed how to center a card with grid and flexbox utilities.",
+          "metadata": {
+            "title": "Centering with CSS grid",
+            "url": "https://css.example.com/grid-centering",
+            "lexicalScore": 0.19,
+            "vectorScore": 0.16,
+            "authorityScore": 0.42,
+            "recencyScore": 0.55,
+            "sourceType": "web"
+          },
+          "label": 0
+        }
+      ]
+    },
+    {
+      "id": "gpu-export-controls",
+      "query": "What are the latest GPU export control changes and what do they affect?",
+      "goldAspects": ["gpu", "export", "control", "affect"],
+      "chunks": [
+        {
+          "content": "Recent GPU export control updates targeted data-center accelerators and cloud access thresholds. The changes affected chip shipments, remote access models, and compliance reviews for integrators.",
+          "metadata": {
+            "title": "GPU export controls update",
+            "url": "https://policy.example.gov/gpu-controls",
+            "lexicalScore": 0.91,
+            "vectorScore": 0.89,
+            "authorityScore": 1,
+            "recencyScore": 0.94,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "A semiconductor supply-chain analysis argued that compliance overhead fell most heavily on OEMs and cloud providers rather than consumer-device vendors.",
+          "metadata": {
+            "title": "Compliance burden analysis",
+            "url": "https://analysis.example.com/compliance-burden",
+            "lexicalScore": 0.78,
+            "vectorScore": 0.75,
+            "authorityScore": 0.58,
+            "recencyScore": 0.82,
+            "sourceType": "web"
+          },
+          "label": 1
+        },
+        {
+          "content": "A stock-market rumor post claimed gaming GPUs would vanish worldwide next month, without sourcing or dates.",
+          "metadata": {
+            "title": "Unsourced GPU rumor",
+            "url": "https://forums.example.net/gpu-rumor",
+            "lexicalScore": 0.64,
+            "vectorScore": 0.41,
+            "authorityScore": 0.22,
+            "recencyScore": 0.77,
+            "sourceType": "discussion"
+          },
+          "label": 0
+        }
+      ]
+    }
+  ]
+}

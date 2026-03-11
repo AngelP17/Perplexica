@@ -1,168 +1,175 @@
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import SearchAgent from '@/lib/agents/search';
+import { SearchSources } from '@/lib/agents/search/types';
+import db from '@/lib/db';
+import { chats } from '@/lib/db/schema';
+import { enforceRateLimit } from '@/lib/middleware/rateLimiter';
 import ModelRegistry from '@/lib/models/registry';
 import { loadRoutedChatModel } from '@/lib/models/routing';
 import { ModelWithProvider } from '@/lib/models/types';
-import SearchAgent from '@/lib/agents/search';
 import SessionManager from '@/lib/session';
 import { ChatTurnMessage } from '@/lib/types';
-import { SearchSources } from '@/lib/agents/search/types';
-import db from '@/lib/db';
-import { eq } from 'drizzle-orm';
-import { chats } from '@/lib/db/schema';
-import UploadManager from '@/lib/uploads/manager';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const messageSchema = z.object({
-  messageId: z.string().min(1, 'Message ID is required'),
-  chatId: z.string().min(1, 'Chat ID is required'),
-  content: z.string().min(1, 'Message content is required'),
+const messageSchema = z
+  .object({
+    messageId: z.string().trim().min(1),
+    chatId: z.string().trim().min(1),
+    content: z.string().trim().min(1),
+  })
+  .optional();
+
+const modelSchema: z.ZodType<ModelWithProvider> = z.object({
+  providerId: z.string().trim().min(1),
+  key: z.string().trim().min(1),
 });
 
-const chatModelSchema: z.ZodType<ModelWithProvider> = z.object({
-  providerId: z.string({ message: 'Chat model provider id must be provided' }),
-  key: z.string({ message: 'Chat model key must be provided' }),
-});
-
-const embeddingModelSchema: z.ZodType<ModelWithProvider> = z.object({
-  providerId: z.string({
-    message: 'Embedding model provider id must be provided',
-  }),
-  key: z.string({ message: 'Embedding model key must be provided' }),
-});
+const sourceSchema = z.enum(['web', 'discussions', 'academic']);
 
 const bodySchema = z.object({
   message: messageSchema,
-  optimizationMode: z.enum(['speed', 'balanced', 'quality'], {
-    message: 'Optimization mode must be one of: speed, balanced, quality',
-  }),
-  sources: z.array(z.string()).optional().default([]),
+  chatId: z.string().trim().optional(),
+  query: z.string().trim().optional(),
+  content: z.string().trim().optional(),
+  optimizationMode: z
+    .enum(['speed', 'balanced', 'quality'])
+    .optional()
+    .default('speed'),
+  sources: z.array(sourceSchema).min(1).default(['web']),
+  files: z.array(z.string()).optional().default([]),
   history: z
     .array(z.tuple([z.string(), z.string()]))
     .optional()
     .default([]),
-  files: z.array(z.string()).optional().default([]),
-  chatModel: chatModelSchema,
-  embeddingModel: embeddingModelSchema,
+  chatModel: modelSchema,
+  embeddingModel: modelSchema.optional(),
   systemInstructions: z.string().nullable().optional().default(''),
 });
 
-type Body = z.infer<typeof bodySchema>;
-
-const safeValidateBody = (data: unknown) => {
-  const result = bodySchema.safeParse(data);
-
-  if (!result.success) {
-    return {
-      success: false,
-      error: result.error.issues.map((e: any) => ({
-        path: e.path.join('.'),
-        message: e.message,
-      })),
-    };
-  }
+const resolveMessagePayload = (body: z.infer<typeof bodySchema>) => {
+  const content = body.message?.content || body.content || body.query || '';
+  const chatId = body.message?.chatId || body.chatId || crypto.randomUUID();
+  const messageId = body.message?.messageId || crypto.randomUUID();
 
   return {
-    success: true,
-    data: result.data,
+    chatId,
+    messageId,
+    content: content.trim(),
   };
 };
 
 const ensureChatExists = async (input: {
-  id: string;
-  sources: SearchSources[];
+  chatId: string;
   query: string;
-  fileIds: string[];
+  sources: SearchSources[];
+  files: string[];
 }) => {
-  try {
-    const exists = await db.query.chats
-      .findFirst({
-        where: eq(chats.id, input.id),
-      })
-      .execute();
+  const existing = await db.query.chats.findFirst({
+    where: eq(chats.id, input.chatId),
+  });
 
-    if (!exists) {
-      await db.insert(chats).values({
-        id: input.id,
-        createdAt: new Date().toISOString(),
-        sources: input.sources,
-        title: input.query,
-        files: input.fileIds.map((id) => {
-          return {
-            fileId: id,
-            name: UploadManager.getFile(id)?.name || 'Uploaded File',
-          };
-        }),
-      });
-    }
-  } catch (err) {
-    console.error('Failed to check/save chat:', err);
+  if (!existing) {
+    await db.insert(chats).values({
+      id: input.chatId,
+      title: input.query,
+      createdAt: new Date().toISOString(),
+      sources: input.sources,
+      files: input.files.map((fileId) => ({
+        fileId,
+        name: fileId,
+      })),
+    });
+    return;
   }
+
+  await db
+    .update(chats)
+    .set({
+      sources: input.sources,
+      files: input.files.map((fileId) => ({
+        fileId,
+        name: fileId,
+      })),
+    })
+    .where(eq(chats.id, input.chatId))
+    .execute();
 };
 
 export const POST = async (req: Request) => {
   try {
-    const reqBody = (await req.json()) as Body;
+    const rateLimit = enforceRateLimit(req, 'chat');
+    if (!rateLimit.allowed) {
+      return rateLimit.response;
+    }
 
-    const parseBody = safeValidateBody(reqBody);
-
-    if (!parseBody.success) {
+    const parsed = bodySchema.safeParse(await req.json());
+    if (!parsed.success) {
       return Response.json(
-        { message: 'Invalid request body', error: parseBody.error },
-        { status: 400 },
+        {
+          message: 'Invalid request body',
+          error: parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        },
+        { status: 400, headers: rateLimit.headers },
       );
     }
 
-    const body = parseBody.data as Body;
-    const { message } = body;
+    const body = parsed.data;
+    const payload = resolveMessagePayload(body);
 
-    if (message.content === '') {
+    if (!payload.content) {
       return Response.json(
-        {
-          message: 'Please provide a message to process',
-        },
-        { status: 400 },
+        { message: 'Message content is required' },
+        { status: 400, headers: rateLimit.headers },
       );
     }
 
     const registry = new ModelRegistry();
+    const shouldLoadEmbedding =
+      body.files.length > 0 || body.sources.length > 0;
 
-    const shouldLoadEmbedding = body.files.length > 0;
+    if (shouldLoadEmbedding && !body.embeddingModel) {
+      return Response.json(
+        { message: 'Embedding model is required for search requests.' },
+        { status: 400, headers: rateLimit.headers },
+      );
+    }
 
     const [chatSelection, embedding] = await Promise.all([
       loadRoutedChatModel(registry, body.chatModel, body.optimizationMode),
       shouldLoadEmbedding
         ? registry.loadEmbeddingModel(
-            body.embeddingModel.providerId,
-            body.embeddingModel.key,
+            body.embeddingModel!.providerId,
+            body.embeddingModel!.key,
           )
         : Promise.resolve(undefined),
     ]);
-    const llm = chatSelection.llm;
 
-    const history: ChatTurnMessage[] = body.history.map((msg) => {
-      if (msg[0] === 'human') {
-        return {
-          role: 'user',
-          content: msg[1],
-        };
-      } else {
-        return {
-          role: 'assistant',
-          content: msg[1],
-        };
-      }
+    const history: ChatTurnMessage[] = body.history.map((entry) =>
+      entry[0] === 'human'
+        ? { role: 'user', content: entry[1] }
+        : { role: 'assistant', content: entry[1] },
+    );
+
+    await ensureChatExists({
+      chatId: payload.chatId,
+      query: payload.content,
+      sources: body.sources,
+      files: body.files,
     });
 
     const agent = new SearchAgent();
     const session = SessionManager.createSession();
-
     const responseStream = new TransformStream();
     const writer = responseStream.writable.getWriter();
     const encoder = new TextEncoder();
 
-    const disconnect = session.subscribe((event: string, data: any) => {
+    const disconnect = session.subscribe((event, data) => {
       if (event === 'data') {
         if (data.type === 'block') {
           writer.write(
@@ -201,7 +208,7 @@ export const POST = async (req: Request) => {
           ),
         );
         writer.close();
-        session.removeAllListeners();
+        disconnect();
       } else if (event === 'error') {
         writer.write(
           encoder.encode(
@@ -212,48 +219,42 @@ export const POST = async (req: Request) => {
           ),
         );
         writer.close();
-        session.removeAllListeners();
+        disconnect();
       }
     });
 
     agent.searchAsync(session, {
       chatHistory: history,
-      followUp: message.content,
-      chatId: body.message.chatId,
-      messageId: body.message.messageId,
       config: {
-        llm,
-        embedding: embedding,
-        sources: body.sources as SearchSources[],
+        embedding,
+        llm: chatSelection.llm,
+        sources: body.sources,
         mode: body.optimizationMode,
         fileIds: body.files,
-        systemInstructions: body.systemInstructions || 'None',
+        systemInstructions: body.systemInstructions || '',
       },
-    });
-
-    ensureChatExists({
-      id: body.message.chatId,
-      sources: body.sources as SearchSources[],
-      fileIds: body.files,
-      query: body.message.content,
+      followUp: payload.content,
+      chatId: payload.chatId,
+      messageId: payload.messageId,
     });
 
     req.signal.addEventListener('abort', () => {
       disconnect();
-      writer.close();
+      writer.close().catch(() => undefined);
     });
 
     return new Response(responseStream.readable, {
       headers: {
+        ...rateLimit.headers,
         'Content-Type': 'text/event-stream',
         Connection: 'keep-alive',
         'Cache-Control': 'no-cache, no-transform',
       },
     });
-  } catch (err) {
-    console.error('An error occurred while processing chat request:', err);
+  } catch (error) {
+    console.error('Error while processing a chat request:', error);
     return Response.json(
-      { message: 'An error occurred while processing chat request' },
+      { message: 'An error has occurred.' },
       { status: 500 },
     );
   }

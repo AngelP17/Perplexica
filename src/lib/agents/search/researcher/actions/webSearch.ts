@@ -119,6 +119,7 @@ const webSearchAction: ResearchAction<typeof actionSchema> = {
         metadata: {
           title: r.title,
           url: r.url,
+          sourceType: 'web',
         },
       }));
 

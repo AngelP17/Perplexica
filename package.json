@@ -8,7 +8,10 @@
     "build": "next build --webpack && node scripts/postbuild.js",
     "start": "next start",
     "lint": "eslint .",
-    "format:write": "prettier . --write"
+    "format:write": "prettier . --write",
+    "bench:retrieval": "node --experimental-strip-types scripts/benchmarks/run-retrieval.ts",
+    "bench:agent": "node --experimental-strip-types scripts/benchmarks/run-agent.ts",
+    "bench:all": "node --experimental-strip-types scripts/benchmarks/run-all.ts"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",

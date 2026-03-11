@@ -10,6 +10,22 @@ import { File } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Chunk } from '@/lib/types';
 
+const confidenceStyles: Record<string, string> = {
+  high: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
+  medium: 'bg-amber-500/10 text-amber-600 dark:text-amber-300',
+  low: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-300',
+  conflict: 'bg-rose-500/10 text-rose-600 dark:text-rose-300',
+};
+
+const getConfidenceLabel = (source: Chunk) => {
+  const label = String(source.metadata.confidenceLabel || '').toLowerCase();
+  if (!label) {
+    return null;
+  }
+
+  return label;
+};
+
 const MessageSources = ({ sources }: { sources: Chunk[] }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -35,6 +51,16 @@ const MessageSources = ({ sources }: { sources: Chunk[] }) => {
           <p className="dark:text-white text-xs overflow-hidden whitespace-nowrap text-ellipsis">
             {source.metadata.title}
           </p>
+          {getConfidenceLabel(source) && (
+            <span
+              className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                confidenceStyles[getConfidenceLabel(source)!] ||
+                confidenceStyles.low
+              }`}
+            >
+              {getConfidenceLabel(source)}
+            </span>
+          )}
           <div className="flex flex-row items-center justify-between">
             <div className="flex flex-row items-center space-x-1">
               {source.metadata.url.includes('file_id://') ? (
@@ -122,6 +148,16 @@ const MessageSources = ({ sources }: { sources: Chunk[] }) => {
                         <p className="dark:text-white text-xs overflow-hidden whitespace-nowrap text-ellipsis">
                           {source.metadata.title}
                         </p>
+                        {getConfidenceLabel(source) && (
+                          <span
+                            className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              confidenceStyles[getConfidenceLabel(source)!] ||
+                              confidenceStyles.low
+                            }`}
+                          >
+                            {getConfidenceLabel(source)}
+                          </span>
+                        )}
                         <div className="flex flex-row items-center justify-between">
                           <div className="flex flex-row items-center space-x-1">
                             {source.metadata.url === 'File' ? (

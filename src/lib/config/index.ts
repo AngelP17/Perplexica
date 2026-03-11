@@ -154,10 +154,7 @@ class ConfigManager {
       return JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
     } catch (err) {
       if (err instanceof SyntaxError) {
-        console.error(
-          `Error parsing config file at ${this.configPath}:`,
-          err,
-        );
+        console.error(`Error parsing config file at ${this.configPath}:`, err);
         this.backupInvalidConfig();
         console.log('Restoring default config after backing up invalid file.');
         this.writeConfig(this.currentConfig);
@@ -205,8 +202,67 @@ class ConfigManager {
   }
 
   private migrateConfig(config: Config): Config {
-    /* TODO: Add migrations */
-    return config;
+    const migratedConfig: Config = {
+      version:
+        typeof config?.version === 'number'
+          ? config.version
+          : this.configVersion,
+      setupComplete: Boolean(config?.setupComplete),
+      preferences:
+        config?.preferences && typeof config.preferences === 'object'
+          ? config.preferences
+          : {},
+      personalization:
+        config?.personalization && typeof config.personalization === 'object'
+          ? config.personalization
+          : {},
+      modelProviders: Array.isArray(config?.modelProviders)
+        ? config.modelProviders
+        : [],
+      search:
+        config?.search && typeof config.search === 'object'
+          ? config.search
+          : {},
+    };
+
+    migratedConfig.version = this.configVersion;
+    migratedConfig.preferences = {
+      ...this.currentConfig.preferences,
+      ...migratedConfig.preferences,
+    };
+    migratedConfig.personalization = {
+      ...this.currentConfig.personalization,
+      ...migratedConfig.personalization,
+    };
+    migratedConfig.search = {
+      ...this.currentConfig.search,
+      ...migratedConfig.search,
+    };
+    migratedConfig.modelProviders = migratedConfig.modelProviders.map(
+      (provider) => ({
+        ...provider,
+        id:
+          typeof provider.id === 'string' && provider.id.trim()
+            ? provider.id
+            : crypto.randomUUID(),
+        chatModels: Array.isArray(provider.chatModels)
+          ? provider.chatModels
+          : [],
+        embeddingModels: Array.isArray(provider.embeddingModels)
+          ? provider.embeddingModels
+          : [],
+        config:
+          provider.config && typeof provider.config === 'object'
+            ? provider.config
+            : {},
+        hash:
+          typeof provider.hash === 'string' && provider.hash.trim()
+            ? provider.hash
+            : hashObj(provider.config || {}),
+      }),
+    );
+
+    return migratedConfig;
   }
 
   private initializeFromEnv() {

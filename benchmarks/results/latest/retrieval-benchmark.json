@@ -1,0 +1,57 @@
+{
+  "generatedAt": "2026-03-11T22:26:25.146Z",
+  "stageRows": [
+    {
+      "stage": "hybrid",
+      "relevance": 0.8888888888888888,
+      "latencyMs": 0.02855566666666694,
+      "tokenCost": 0
+    },
+    {
+      "stage": "late_interaction",
+      "relevance": 0.8888888888888888,
+      "latencyMs": 0.6328753333333358,
+      "tokenCost": 255.33333333333334
+    },
+    {
+      "stage": "late_plus_cross_encoder",
+      "relevance": 0.8888888888888888,
+      "latencyMs": 0.7738193333333309,
+      "tokenCost": 510.6666666666667
+    }
+  ],
+  "strategyRows": [
+    {
+      "strategy": "baseline",
+      "answerQuality": 0.7822222222222223,
+      "groundingRate": 0.6722222222222222,
+      "finalTokenCount": 154.66666666666666,
+      "citationDensity": 0.026097413424224985,
+      "latencyMs": 0.17093066666667292
+    },
+    {
+      "strategy": "dedup",
+      "answerQuality": 0.7822222222222223,
+      "groundingRate": 0.6722222222222222,
+      "finalTokenCount": 151,
+      "citationDensity": 0.026558397415508195,
+      "latencyMs": 0.16302766666666932
+    },
+    {
+      "strategy": "mmr",
+      "answerQuality": 0.7822222222222223,
+      "groundingRate": 0.6722222222222222,
+      "finalTokenCount": 151,
+      "citationDensity": 0.026558397415508195,
+      "latencyMs": 0.1819863333333321
+    },
+    {
+      "strategy": "optimized",
+      "answerQuality": 0.7822222222222223,
+      "groundingRate": 0.6722222222222222,
+      "finalTokenCount": 151,
+      "citationDensity": 0.026558397415508195,
+      "latencyMs": 0.17804199999999545
+    }
+  ]
+}

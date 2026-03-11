@@ -1,7 +1,18 @@
 # Computer Mode - Final Verification Checklist ✅
 
 ## Date: 2026-03-03
+
 ## Status: ALL CHECKS PASSED ✅
+
+---
+
+```mermaid
+flowchart LR
+    Plan[plan.md requirements] --> Build[Implementation review]
+    Build --> Wiring[Integration checks]
+    Wiring --> Runtime[Build + runtime validation]
+    Runtime --> Verdict[All checks passed]
+```
 
 ---
 
@@ -9,59 +20,59 @@
 
 ### Core Features from plan.md
 
-| Feature | Status | Evidence |
-|---------|--------|----------|
-| **Computer Agent Mode** | ✅ Complete | `src/lib/agents/computer/index.ts` |
-| **CoPaw-inspired sub-agents** | ✅ Complete | `src/lib/agents/computer/swarmExecutor.ts` |
-| **File operations** | ✅ Complete | `read_file`, `write_file`, `list_files` in tools.ts |
-| **Python execution** | ✅ Complete | `execute_python` in tools.ts |
-| **Browser automation** | ✅ Complete | All 5 Playwright tools in browserSkill.ts |
-| **Skill registry** | ✅ Complete | 5 skills (planner, operator, coder, researcher, browser) |
-| **Real sub-agents** | ✅ Complete | SwarmExecutor with actual agent execution |
-| **Sequential execution** | ✅ Complete | M4-optimized (one model at a time) |
-| **Mode selector UI** | ✅ Complete | InteractionMode.tsx |
-| **Swarm toggle** | ✅ Complete | SwarmToggle.tsx |
-| **Trace rendering** | ✅ Complete | ComputerSteps.tsx |
+| Feature                       | Status      | Evidence                                                 |
+| ----------------------------- | ----------- | -------------------------------------------------------- |
+| **Computer Agent Mode**       | ✅ Complete | `src/lib/agents/computer/index.ts`                       |
+| **CoPaw-inspired sub-agents** | ✅ Complete | `src/lib/agents/computer/swarmExecutor.ts`               |
+| **File operations**           | ✅ Complete | `read_file`, `write_file`, `list_files` in tools.ts      |
+| **Python execution**          | ✅ Complete | `execute_python` in tools.ts                             |
+| **Browser automation**        | ✅ Complete | All 5 Playwright tools in browserSkill.ts                |
+| **Skill registry**            | ✅ Complete | 5 skills (planner, operator, coder, researcher, browser) |
+| **Real sub-agents**           | ✅ Complete | SwarmExecutor with actual agent execution                |
+| **Sequential execution**      | ✅ Complete | M4-optimized (one model at a time)                       |
+| **Mode selector UI**          | ✅ Complete | InteractionMode.tsx                                      |
+| **Swarm toggle**              | ✅ Complete | SwarmToggle.tsx                                          |
+| **Trace rendering**           | ✅ Complete | ComputerSteps.tsx                                        |
 
 ### Tools from plan.md
 
-| Tool | Required | Implemented | Location |
-|------|----------|-------------|----------|
-| read_file | ✅ | ✅ | tools.ts:41-64 |
-| write_file | ✅ | ✅ | tools.ts:66-94 |
-| list_files | ✅ | ✅ | tools.ts:96-124 |
-| execute_python | ✅ | ✅ | tools.ts:126-207 |
-| browser_navigate | ✅ | ✅ | browserSkill.ts:58-92 |
-| browser_click | ✅ | ✅ | browserSkill.ts:94-125 |
-| browser_type | ✅ | ✅ | browserSkill.ts:127-158 |
-| browser_screenshot | ✅ | ✅ | browserSkill.ts:160-199 |
-| browser_scrape | ✅ | ✅ | browserSkill.ts:201-241 |
+| Tool               | Required | Implemented | Location                |
+| ------------------ | -------- | ----------- | ----------------------- |
+| read_file          | ✅       | ✅          | tools.ts:41-64          |
+| write_file         | ✅       | ✅          | tools.ts:66-94          |
+| list_files         | ✅       | ✅          | tools.ts:96-124         |
+| execute_python     | ✅       | ✅          | tools.ts:126-207        |
+| browser_navigate   | ✅       | ✅          | browserSkill.ts:58-92   |
+| browser_click      | ✅       | ✅          | browserSkill.ts:94-125  |
+| browser_type       | ✅       | ✅          | browserSkill.ts:127-158 |
+| browser_screenshot | ✅       | ✅          | browserSkill.ts:160-199 |
+| browser_scrape     | ✅       | ✅          | browserSkill.ts:201-241 |
 
 **Total: 9/9 tools implemented ✅**
 
 ### Skills from plan.md
 
-| Skill | Required | Implemented | Tools | Location |
-|-------|----------|-------------|-------|----------|
-| planner | ✅ | ✅ | None | registry.ts:13-32 |
-| operator | ✅ | ✅ | All 9 | registry.ts:34-53 |
-| coder | ✅ | ✅ | File + Python (4) | registry.ts:55-78 |
-| researcher | ✅ | ✅ | File read/list (2) | registry.ts:80-97 |
-| browser | ✅ | ✅ | Browser (5) | registry.ts:99-128 |
+| Skill      | Required | Implemented | Tools              | Location           |
+| ---------- | -------- | ----------- | ------------------ | ------------------ |
+| planner    | ✅       | ✅          | None               | registry.ts:13-32  |
+| operator   | ✅       | ✅          | All 9              | registry.ts:34-53  |
+| coder      | ✅       | ✅          | File + Python (4)  | registry.ts:55-78  |
+| researcher | ✅       | ✅          | File read/list (2) | registry.ts:80-97  |
+| browser    | ✅       | ✅          | Browser (5)        | registry.ts:99-128 |
 
 **Total: 5/5 skills implemented ✅**
 
 ### Integration from plan.md
 
-| Integration Point | Required | Implemented | File |
-|------------------|----------|-------------|------|
-| ComputerBlock type | ✅ | ✅ | types.ts:120-130 |
-| Block union update | ✅ | ✅ | types.ts:132 |
-| useChat mode state | ✅ | ✅ | useChat.tsx:43-44 |
-| useChat route switching | ✅ | ✅ | useChat.tsx:754-759 |
-| MessageBox rendering | ✅ | ✅ | MessageBox.tsx:151-166 |
-| EmptyChatMessageInput | ✅ | ✅ | EmptyChatMessageInput.tsx:67-83 |
-| MessageInput | ✅ | ✅ | MessageInput.tsx:112-127 |
+| Integration Point       | Required | Implemented | File                            |
+| ----------------------- | -------- | ----------- | ------------------------------- |
+| ComputerBlock type      | ✅       | ✅          | types.ts:120-130                |
+| Block union update      | ✅       | ✅          | types.ts:132                    |
+| useChat mode state      | ✅       | ✅          | useChat.tsx:43-44               |
+| useChat route switching | ✅       | ✅          | useChat.tsx:754-759             |
+| MessageBox rendering    | ✅       | ✅          | MessageBox.tsx:151-166          |
+| EmptyChatMessageInput   | ✅       | ✅          | EmptyChatMessageInput.tsx:67-83 |
+| MessageInput            | ✅       | ✅          | MessageInput.tsx:112-127        |
 
 **Total: 7/7 integration points complete ✅**
 
@@ -71,51 +82,51 @@
 
 ### Backend Path from enhance.md
 
-| Component | Required | Implemented | Lines |
-|-----------|----------|-------------|-------|
-| POST /api/computer | ✅ | ✅ | 209 |
-| ComputerAgent | ✅ | ✅ | 135 |
-| Types | ✅ | ✅ | 69 |
-| Tools | ✅ | ✅ | 207 |
-| Prompts | ✅ | ✅ | 54 |
-| SwarmExecutor | ✅ | ✅ | 516 |
-| Skill Registry | ✅ | ✅ | 128 |
-| Browser Skill | ✅ | ✅ | 317 |
+| Component          | Required | Implemented | Lines |
+| ------------------ | -------- | ----------- | ----- |
+| POST /api/computer | ✅       | ✅          | 209   |
+| ComputerAgent      | ✅       | ✅          | 135   |
+| Types              | ✅       | ✅          | 69    |
+| Tools              | ✅       | ✅          | 207   |
+| Prompts            | ✅       | ✅          | 54    |
+| SwarmExecutor      | ✅       | ✅          | 516   |
+| Skill Registry     | ✅       | ✅          | 128   |
+| Browser Skill      | ✅       | ✅          | 317   |
 
 **Total: 8/8 backend files complete ✅**
 
 ### UI Surface from enhance.md
 
-| Component | Required | Implemented | Lines |
-|-----------|----------|-------------|-------|
-| InteractionMode | ✅ | ✅ | 100 |
-| SwarmToggle | ✅ | ✅ | 32 |
-| ComputerSteps | ✅ | ✅ | 250+ |
+| Component       | Required | Implemented | Lines |
+| --------------- | -------- | ----------- | ----- |
+| InteractionMode | ✅       | ✅          | 100   |
+| SwarmToggle     | ✅       | ✅          | 32    |
+| ComputerSteps   | ✅       | ✅          | 250+  |
 
 **Total: 3/3 UI components complete ✅**
 
 ### Shared Infrastructure from enhance.md
 
-| Update | Required | Implemented | File |
-|--------|----------|-------------|------|
-| ComputerBlock in types | ✅ | ✅ | types.ts |
-| interactionMode state | ✅ | ✅ | useChat.tsx |
-| swarmEnabled state | ✅ | ✅ | useChat.tsx |
-| localStorage persistence | ✅ | ✅ | useChat.tsx |
-| Route switching logic | ✅ | ✅ | useChat.tsx |
-| NDJSON parsing | ✅ | ✅ | useChat.tsx |
-| MessageBox integration | ✅ | ✅ | MessageBox.tsx |
+| Update                   | Required | Implemented | File           |
+| ------------------------ | -------- | ----------- | -------------- |
+| ComputerBlock in types   | ✅       | ✅          | types.ts       |
+| interactionMode state    | ✅       | ✅          | useChat.tsx    |
+| swarmEnabled state       | ✅       | ✅          | useChat.tsx    |
+| localStorage persistence | ✅       | ✅          | useChat.tsx    |
+| Route switching logic    | ✅       | ✅          | useChat.tsx    |
+| NDJSON parsing           | ✅       | ✅          | useChat.tsx    |
+| MessageBox integration   | ✅       | ✅          | MessageBox.tsx |
 
 **Total: 7/7 infrastructure updates complete ✅**
 
 ### Validation Fixes from enhance.md
 
-| Fix | Required | Implemented | Impact |
-|-----|----------|-------------|--------|
-| Stream parsing | ✅ | ✅ | Partial NDJSON preservation |
-| Rewrite history slicing | ✅ | ✅ | Turn pair handling |
-| Session event snapshots | ✅ | ✅ | Reconnect replay safety |
-| Reconnect unsubscribe | ✅ | ✅ | No uninitialized refs |
+| Fix                     | Required | Implemented | Impact                      |
+| ----------------------- | -------- | ----------- | --------------------------- |
+| Stream parsing          | ✅       | ✅          | Partial NDJSON preservation |
+| Rewrite history slicing | ✅       | ✅          | Turn pair handling          |
+| Session event snapshots | ✅       | ✅          | Reconnect replay safety     |
+| Reconnect unsubscribe   | ✅       | ✅          | No uninitialized refs       |
 
 **Total: 4/4 validation fixes complete ✅**
 
@@ -124,6 +135,7 @@
 ## 3. Standalone Server Fix - Complete ✅
 
 ### Issue Identified
+
 ```
 One note from validation: running node .next/standalone/server.js directly
 from the repo root still expects runtime assets like drizzle/ to be present
@@ -132,14 +144,15 @@ beside the standalone output.
 
 ### Solution Implemented
 
-| Task | Status | File | Description |
-|------|--------|------|-------------|
-| Add drizzle to file tracing | ✅ | next.config.mjs | Added `./drizzle/**` to outputFileTracingIncludes |
-| Create postbuild script | ✅ | scripts/postbuild.js | Copies drizzle/ and data/ to standalone |
-| Update build command | ✅ | package.json | Added postbuild to build script |
-| Test standalone execution | ✅ | Manual verification | Server starts and runs migrations ✅ |
+| Task                        | Status | File                 | Description                                       |
+| --------------------------- | ------ | -------------------- | ------------------------------------------------- |
+| Add drizzle to file tracing | ✅     | next.config.mjs      | Added `./drizzle/**` to outputFileTracingIncludes |
+| Create postbuild script     | ✅     | scripts/postbuild.js | Copies drizzle/ and data/ to standalone           |
+| Update build command        | ✅     | package.json         | Added postbuild to build script                   |
+| Test standalone execution   | ✅     | Manual verification  | Server starts and runs migrations ✅              |
 
 ### Verification Output
+
 ```bash
 $ node scripts/postbuild.js
 [postbuild] ✓ Copied drizzle/ to standalone output
@@ -163,12 +176,14 @@ Database migrations completed successfully
 ## 4. Build & Type Validation - Complete ✅
 
 ### TypeScript Compilation
+
 ```bash
 $ npx tsc --noEmit --pretty false
 ✅ No errors
 ```
 
 ### Next.js Build
+
 ```bash
 $ npm run build
 ✅ Successful build
@@ -177,6 +192,7 @@ $ npm run build
 ```
 
 ### Docker Builds
+
 ```bash
 $ docker build -f Dockerfile .
 ✅ Full image builds (with SearXNG)
@@ -190,6 +206,7 @@ $ docker build -f Dockerfile.slim .
 ## 5. Runtime Validation - Complete ✅
 
 ### Search Mode (Regression Test)
+
 - ✅ POST /api/chat works
 - ✅ ResearchBlock renders
 - ✅ Sources appear
@@ -197,6 +214,7 @@ $ docker build -f Dockerfile.slim .
 - ✅ Reconnect works
 
 ### Computer Mode (Single Agent)
+
 - ✅ POST /api/computer works
 - ✅ ComputerBlock renders
 - ✅ File operations work
@@ -204,18 +222,21 @@ $ docker build -f Dockerfile.slim .
 - ✅ Observations appear
 
 ### Computer Mode (Swarm)
+
 - ✅ Swarm planning works (or falls back to operator)
 - ✅ Multiple agents execute sequentially
 - ✅ Planning substep shows agent roles
 - ✅ Action/observation flow correct
 
 ### Browser Automation
+
 - ✅ browser_navigate works
 - ✅ browser_screenshot saves artifacts
 - ✅ browser_scrape extracts text
 - ✅ BrowserManager cleanup works
 
 ### UI Behavior
+
 - ✅ Mode selector switches modes
 - ✅ Swarm toggle appears in computer mode only
 - ✅ localStorage persists settings
@@ -226,53 +247,56 @@ $ docker build -f Dockerfile.slim .
 
 ## 6. Security & Safety - Complete ✅
 
-| Safety Feature | Status | Implementation |
-|---------------|--------|----------------|
-| Path traversal protection | ✅ | resolveWorkspacePath() in tools.ts |
-| Workspace isolation | ✅ | All ops stay under the configured workspace root |
-| Python timeout | ✅ | 30s limit in execute_python |
-| Temp file cleanup | ✅ | Unlink in execute_python |
-| Text truncation | ✅ | 12,000 char limit |
-| Browser sandbox | ✅ | Headless chromium with args |
-| Browser idle cleanup | ✅ | 5 min timeout in BrowserManager |
-| Tool validation | ✅ | Zod schemas for all tools |
+| Safety Feature            | Status | Implementation                                   |
+| ------------------------- | ------ | ------------------------------------------------ |
+| Path traversal protection | ✅     | resolveWorkspacePath() in tools.ts               |
+| Workspace isolation       | ✅     | All ops stay under the configured workspace root |
+| Python timeout            | ✅     | 30s limit in execute_python                      |
+| Temp file cleanup         | ✅     | Unlink in execute_python                         |
+| Text truncation           | ✅     | 12,000 char limit                                |
+| Browser sandbox           | ✅     | Headless chromium with args                      |
+| Browser idle cleanup      | ✅     | 5 min timeout in BrowserManager                  |
+| Tool validation           | ✅     | Zod schemas for all tools                        |
 
 ---
 
 ## 7. Performance Optimization - Complete ✅
 
 ### M4 24GB Optimization
-| Feature | Status | Impact |
-|---------|--------|--------|
-| Sequential execution | ✅ | One model at a time |
-| Peak RAM control | ✅ | ~14-16GB (under 24GB limit) |
-| Iteration limits | ✅ | 2/4/6 based on mode |
-| Temperature tuning | ✅ | 0.1/0.2/0.3 based on mode |
-| Browser singleton | ✅ | Reused across tasks |
-| Auto-cleanup | ✅ | Prevents memory leaks |
+
+| Feature              | Status | Impact                      |
+| -------------------- | ------ | --------------------------- |
+| Sequential execution | ✅     | One model at a time         |
+| Peak RAM control     | ✅     | ~14-16GB (under 24GB limit) |
+| Iteration limits     | ✅     | 2/4/6 based on mode         |
+| Temperature tuning   | ✅     | 0.1/0.2/0.3 based on mode   |
+| Browser singleton    | ✅     | Reused across tasks         |
+| Auto-cleanup         | ✅     | Prevents memory leaks       |
 
 ---
 
 ## 8. Documentation - Complete ✅
 
-| Document | Status | Purpose |
-|----------|--------|---------|
-| COMPUTER_MODE_COMPLETE.md | ✅ | Complete reference guide |
-| VERIFICATION_CHECKLIST.md | ✅ | This file - verification checklist |
-| enhance.md | ✅ | As-built architecture |
-| plan.md | ✅ | Original implementation plan |
-| scripts/postbuild.js | ✅ | Standalone asset copy script |
+| Document                  | Status | Purpose                            |
+| ------------------------- | ------ | ---------------------------------- |
+| COMPUTER_MODE_COMPLETE.md | ✅     | Complete reference guide           |
+| VERIFICATION_CHECKLIST.md | ✅     | This file - verification checklist |
+| enhance.md                | ✅     | As-built architecture              |
+| plan.md                   | ✅     | Original implementation plan       |
+| scripts/postbuild.js      | ✅     | Standalone asset copy script       |
 
 ---
 
 ## 9. Final Status Summary
 
 ### Files Created: 12
+
 - 8 backend files (computer agent stack)
 - 3 frontend files (UI components)
 - 1 build script (postbuild.js)
 
 ### Files Modified: 7
+
 - next.config.mjs (drizzle tracing)
 - package.json (postbuild script)
 - src/lib/types.ts (ComputerBlock)
@@ -284,6 +308,7 @@ $ docker build -f Dockerfile.slim .
 ### Total Changes: 19 files
 
 ### Lines of Code Added: ~2,635
+
 - Backend: ~1,635 lines
 - Frontend: ~382 lines
 - Scripts: ~44 lines
@@ -294,6 +319,7 @@ $ docker build -f Dockerfile.slim .
 ## 10. Verification Commands
 
 ### Quick Verification
+
 ```bash
 # 1. Check TypeScript
 npx tsc --noEmit --pretty false
@@ -310,6 +336,7 @@ cd .next/standalone && node server.js
 ```
 
 ### Full Verification
+
 ```bash
 # 1. Docker build (full)
 docker build -f Dockerfile -t perplexica:test .
@@ -329,11 +356,13 @@ npm run lint
 ## 11. Known Non-Issues
 
 ### Lint Command
+
 - `npm run lint` passes
 - Current result is 15 pre-existing warnings and 0 errors
 - **Not related to computer mode implementation**
 
 ### Docker Validation
+
 - `docker build -f Dockerfile .` passes locally
 - `docker build -f Dockerfile.slim .` passes locally
 - Full image additionally validates the Playwright and SearXNG runtime layers
@@ -372,12 +401,14 @@ From plan.md success criteria:
 ### ✅ COMPLETE AND READY FOR PRODUCTION
 
 **All requirements from plan.md and enhance.md have been:**
+
 - ✅ Implemented
 - ✅ Integrated
 - ✅ Validated
 - ✅ Documented
 
 **The standalone server issue has been:**
+
 - ✅ Identified
 - ✅ Fixed
 - ✅ Tested
@@ -396,6 +427,7 @@ From plan.md success criteria:
 ## Appendix: Quick Reference
 
 ### Start Computer Mode
+
 1. Open Perplexica UI
 2. Click mode selector (top left, default: Search)
 3. Select "Computer"
@@ -403,6 +435,7 @@ From plan.md success criteria:
 5. Enter task and send
 
 ### Example Tasks
+
 ```
 Single-agent:
 "List files in workspace"
@@ -416,12 +449,14 @@ Swarm mode:
 ```
 
 ### Troubleshooting
+
 - If swarm planning fails: Falls back to single operator agent ✅
 - If browser task fails: Check Playwright installation
 - If Python fails: Ensure python3 is available in container/system
 - If file ops fail: Check workspace directory exists
 
 ### Workspace Location
+
 - Default: `{CWD}/`
 - Override: Set `COMPUTER_WORKSPACE_DIR` env variable
 - Browser artifacts: `{workspace}/browser-artifacts/`

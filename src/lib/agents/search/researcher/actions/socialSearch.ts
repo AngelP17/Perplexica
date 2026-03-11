@@ -67,6 +67,7 @@ const socialSearchAction: ResearchAction<typeof schema> = {
         metadata: {
           title: r.title,
           url: r.url,
+          sourceType: 'discussion',
         },
       }));
 

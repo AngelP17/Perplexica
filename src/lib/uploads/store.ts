@@ -46,6 +46,7 @@ class UploadStore {
                     fileName: file.name,
                     title: file.name,
                     url: `file_id://${file.id}`,
+                    sourceType: 'document',
                 }
             })))
         })

@@ -2,11 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Browser, BrowserContext, Locator, Page, chromium } from 'playwright';
 import z from 'zod';
-import { getWorkspaceBase, truncateText } from '../tools';
-import { BrowserToolResult, ComputerTool } from '../types';
+import { truncateText } from '../tools';
+import {
+  BrowserToolResult,
+  ComputerTool,
+  ComputerToolExecutionContext,
+} from '../types';
 
 class BrowserManager {
-  private static instance: BrowserManager | null = null;
+  private static instances = new Map<string, BrowserManager>();
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -14,14 +18,19 @@ class BrowserManager {
   private idleTimerStarted = false;
   private readonly idleTimeoutMs = 5 * 60 * 1000;
 
-  static getInstance() {
-    if (!BrowserManager.instance) {
-      BrowserManager.instance = new BrowserManager();
+  static getInstance(context: ComputerToolExecutionContext) {
+    const key = context.sandbox.policy.sandboxId;
+    const existing = BrowserManager.instances.get(key);
+
+    if (existing) {
+      existing.startIdleTimer();
+      return existing;
     }
 
-    BrowserManager.instance.startIdleTimer();
-
-    return BrowserManager.instance;
+    const created = new BrowserManager();
+    BrowserManager.instances.set(key, created);
+    created.startIdleTimer();
+    return created;
   }
 
   private startIdleTimer() {
@@ -39,21 +48,35 @@ class BrowserManager {
     timer.unref?.();
   }
 
-  async getPage() {
+  async getPage(context: ComputerToolExecutionContext) {
     this.lastActivity = Date.now();
 
     if (!this.browser || !this.browser.isConnected()) {
       this.browser = await chromium.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-dev-shm-usage'],
+        args: ['--disable-dev-shm-usage'],
       });
     }
 
     if (!this.context) {
       this.context = await this.browser.newContext({
         viewport: { width: 1440, height: 900 },
+        acceptDownloads: false,
+        permissions: [],
+        javaScriptEnabled: true,
+        bypassCSP: false,
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      });
+
+      await this.context.route('**/*', async (route) => {
+        try {
+          const requestUrl = route.request().url();
+          context.sandbox.assertBrowserUrlAllowed(requestUrl);
+          await route.continue();
+        } catch {
+          await route.abort();
+        }
       });
     }
 
@@ -84,7 +107,7 @@ const resolveLocator = async (
     if ((await cssLocator.count()) > 0) {
       return cssLocator;
     }
-  } catch (_) {}
+  } catch {}
 
   const textLocator = page.getByText(selector, { exact: false }).first();
 
@@ -113,7 +136,12 @@ const typeSchema = z.object({
 
 const screenshotSchema = z.object({
   fullPage: z.preprocess((value) => {
-    if (value === undefined || value === null || value === '' || value === '.') {
+    if (
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      value === '.'
+    ) {
       return undefined;
     }
 
@@ -139,13 +167,16 @@ const browserNavigateTool: ComputerTool<typeof navigateSchema> = {
   description:
     'Navigate the shared browser page to a URL and wait for it to load. Required args: url. Optional args: waitUntil.',
   schema: navigateSchema,
-  execute: async (params): Promise<BrowserToolResult> => {
+  execute: async (params, context): Promise<BrowserToolResult> => {
     try {
-      const page = await BrowserManager.getInstance().getPage();
+      context.sandbox.recordBrowserAction();
+      context.sandbox.assertBrowserUrlAllowed(params.url);
+
+      const page = await BrowserManager.getInstance(context).getPage(context);
 
       await page.goto(params.url, {
         waitUntil: params.waitUntil || 'domcontentloaded',
-        timeout: 30_000,
+        timeout: 20_000,
       });
 
       return {
@@ -169,9 +200,10 @@ const browserClickTool: ComputerTool<typeof clickSchema> = {
   description:
     'Click an element using a CSS selector first, then fall back to visible text. Required args: selector. Optional args: timeout.',
   schema: clickSchema,
-  execute: async (params): Promise<BrowserToolResult> => {
+  execute: async (params, context): Promise<BrowserToolResult> => {
     try {
-      const page = await BrowserManager.getInstance().getPage();
+      context.sandbox.recordBrowserAction();
+      const page = await BrowserManager.getInstance(context).getPage(context);
       const locator = await resolveLocator(page, params.selector);
 
       await locator.click({
@@ -180,6 +212,8 @@ const browserClickTool: ComputerTool<typeof clickSchema> = {
       await page
         .waitForLoadState('domcontentloaded', { timeout: 5_000 })
         .catch(() => undefined);
+
+      context.sandbox.assertBrowserUrlAllowed(page.url());
 
       return {
         success: true,
@@ -203,9 +237,10 @@ const browserTypeTool: ComputerTool<typeof typeSchema> = {
   description:
     'Type text into an input field located by CSS selector. Required args: selector, text. Optional args: clear.',
   schema: typeSchema,
-  execute: async (params): Promise<BrowserToolResult> => {
+  execute: async (params, context): Promise<BrowserToolResult> => {
     try {
-      const page = await BrowserManager.getInstance().getPage();
+      context.sandbox.recordBrowserAction();
+      const page = await BrowserManager.getInstance(context).getPage(context);
       const locator = page.locator(params.selector).first();
 
       if ((params.clear ?? true) === false) {
@@ -235,13 +270,16 @@ const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
   description:
     'Save a PNG screenshot of the current browser page into the workspace and return its path. Optional args: fullPage. Use {} for a normal screenshot or {"fullPage": true} for a full-page screenshot.',
   schema: screenshotSchema,
-  execute: async (params): Promise<BrowserToolResult> => {
+  execute: async (params, context): Promise<BrowserToolResult> => {
     try {
-      const page = await BrowserManager.getInstance().getPage();
-      const artifactDir = path.join(getWorkspaceBase(), 'browser-artifacts');
-      const filePath = path.join(artifactDir, `screenshot_${Date.now()}.png`);
+      context.sandbox.recordBrowserAction();
+      const page = await BrowserManager.getInstance(context).getPage(context);
+      const filePath = path.join(
+        context.sandbox.artifactsDir,
+        `screenshot_${Date.now()}.png`,
+      );
 
-      await fs.mkdir(artifactDir, { recursive: true });
+      await fs.mkdir(context.sandbox.artifactsDir, { recursive: true });
       await page.screenshot({
         path: filePath,
         fullPage: params.fullPage || false,
@@ -249,6 +287,7 @@ const browserScreenshotTool: ComputerTool<typeof screenshotSchema> = {
       });
 
       const stats = await fs.stat(filePath);
+      await context.sandbox.recordWrite(filePath, stats.size);
 
       return {
         success: true,
@@ -273,9 +312,10 @@ const browserScrapeTool: ComputerTool<typeof scrapeSchema> = {
   description:
     'Extract text content or a specific attribute from the current browser page. Optional args: selector, attribute. Use {"attribute":"text"} or omit attribute to get text content.',
   schema: scrapeSchema,
-  execute: async (params): Promise<BrowserToolResult> => {
+  execute: async (params, context): Promise<BrowserToolResult> => {
     try {
-      const page = await BrowserManager.getInstance().getPage();
+      context.sandbox.recordBrowserAction();
+      const page = await BrowserManager.getInstance(context).getPage(context);
       const selector = params.selector || 'body';
       const locator = page.locator(selector);
       const count = await locator.count();
