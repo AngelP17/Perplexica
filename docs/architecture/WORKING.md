@@ -1,6 +1,7 @@
-# How Search Mode Works
+# How Vane Works
 
-This is a high level overview of how Perplexica answers a question in search mode.
+This is a high level overview of how Vane answers a question in search
+mode.
 
 If you want a component level overview, see [README.md](README.md).
 
@@ -85,7 +86,7 @@ sequenceDiagram
     participant L as LLM
     participant A as ActionRegistry
     participant S as Search Backend
-    
+
     loop Until 'done' or max iterations
         R->>L: streamText with available tools
         L-->>R: toolCallChunk (reasoning/plan)
@@ -119,7 +120,7 @@ flowchart LR
     D --> E[LLM streamText]
     E --> F[TextBlock]
     F --> G[UI renders with citations]
-    
+
     style E fill:#f9f,stroke:#333
 ```
 
@@ -129,7 +130,7 @@ We prompt the model to cite the references it used. The UI then renders those ci
 
 ## Search API
 
-If you are integrating Perplexica into another product, you can call `POST /api/search`.
+If you are integrating Vane into another product, you can call `POST /api/search`.
 
 It returns:
 

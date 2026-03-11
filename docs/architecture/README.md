@@ -1,6 +1,8 @@
-# Perplexica Architecture
+# Vane Architecture
 
-Perplexica is a Next.js application that combines an AI chat experience with search and computer-agent execution.
+Vane is a Next.js application that combines an AI chat experience with
+search. This fork also adds computer-agent execution, richer retrieval
+evaluation, and stronger local tool sandboxing on top of the base app.
 
 For a high level flow, see [WORKING.md](WORKING.md). For deeper implementation details, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
@@ -20,7 +22,7 @@ graph TB
         Hooks[useChat]
         MessageBox[MessageBox]
     end
-    
+
     subgraph API["API Layer"]
         ChatAPI["/api/chat"]
         ComputerAPI["/api/computer"]
@@ -28,7 +30,7 @@ graph TB
         ReconnectAPI["/api/reconnect/[id]"]
         ProvidersAPI["/api/providers"]
     end
-    
+
     subgraph Agents["Agent System"]
         SearchAgent[SearchAgent]
         Classifier[Classifier]
@@ -38,7 +40,7 @@ graph TB
         SwarmExecutor[SwarmExecutor]
         SkillRegistry[Skill Registry]
     end
-    
+
     subgraph Actions["Research Actions"]
         WebSearch[web_search]
         AcademicSearch[academic_search]
@@ -51,7 +53,7 @@ graph TB
         FileTools[File / Python Tools]
         BrowserTools[Browser Tools]
     end
-    
+
     subgraph Models["Model Layer"]
         ModelRegistry[Model Registry]
         OpenAI[OpenAI]
@@ -59,18 +61,18 @@ graph TB
         Anthropic[Anthropic]
         Gemini[Gemini]
     end
-    
+
     subgraph Storage["Storage"]
         Database[(SQLite DB)]
         FileUploads[Uploaded Files]
         Workspace[Computer Workspace]
         SessionManager[SessionManager]
     end
-    
+
     subgraph Search["Search Backend"]
         SearxNG[SearxNG]
     end
-    
+
     UI --> Hooks
     Hooks --> ChatAPI
     Hooks --> ComputerAPI
@@ -105,11 +107,9 @@ graph TB
 ## Key components
 
 1. **User Interface**
-
    - A web based UI that lets users chat, search, and view citations.
 
 2. **API Routes**
-
    - `POST /api/chat` powers the chat UI.
    - `POST /api/computer` powers the computer-agent UI mode.
    - `POST /api/search` provides a programmatic search endpoint.
@@ -117,22 +117,18 @@ graph TB
    - `GET /api/providers` lists available providers and model keys.
 
 3. **Agents and Orchestration**
-
    - The system classifies the question first.
    - It can run research and widgets in parallel.
    - It generates the final answer and includes citations.
    - Computer mode runs file, Python, and browser tools through `ComputerAgent` and `SwarmExecutor`.
 
 4. **Search Backend**
-
    - A meta search backend is used to fetch relevant web results when research is enabled.
 
 5. **LLMs (Large Language Models)**
-
    - Used for classification, writing answers, and producing citations.
 
 6. **Embedding Models**
-
    - Used for semantic search over user uploaded files.
 
 7. **Storage**

@@ -80,6 +80,13 @@ export const searchSearxng = async (
       signal: AbortSignal.timeout(10000),
     });
   } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new SearxngError(
+        `SearXNG search timed out after 10000ms at ${searxngURL.toString()}.`,
+        { cause: error },
+      );
+    }
+
     throw new SearxngError(
       `Could not reach SearXNG at ${searxngURL.toString()}. Start the service or update the configured URL.`,
       { cause: error },
